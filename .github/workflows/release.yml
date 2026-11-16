@@ -1,5 +1,6 @@
-# Publishes to npm when a v* tag is pushed. Authenticates with npm trusted publishing (OIDC), so
-# no token is stored; the trusted publisher (this repository and workflow) is set on npmjs.com.
+# Stages a release on npm when a v* tag is pushed. Authenticates with npm trusted publishing (OIDC),
+# so no token is stored; the trusted publisher (this repository, workflow and environment) on
+# npmjs.com may only stage. A maintainer publishes it with `npm stage approve <id>` (2FA).
 name: Release
 
 on:
@@ -27,6 +28,6 @@ jobs:
       - run: vp test
       - name: Check the tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      # npm refuses to run under devEngines (pnpm), so publish with pnpm. prepublishOnly builds dist.
+      # npm refuses to run under devEngines (pnpm), so stage with pnpm. prepublishOnly builds dist.
       # The tag checkout is a detached HEAD, which pnpm's git checks reject.
-      - run: vp pm publish --provenance --no-git-checks
+      - run: vp pm stage publish --provenance -- --no-git-checks
