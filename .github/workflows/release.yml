@@ -1,0 +1,31 @@
+# Publishes to npm when a v* tag is pushed. Authenticates with npm trusted publishing (OIDC), so
+# no token is stored; the trusted publisher (this repository and workflow) is set on npmjs.com.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version: "26"
+          cache: false
+      - run: vp check
+      - run: vp test
+      - name: Check the tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      # prepublishOnly builds dist with vp pack.
+      - run: npm publish --provenance
