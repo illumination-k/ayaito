@@ -1,5 +1,5 @@
-import type { Edge, Middleware } from "./edge.ts";
-import type { Context, Fn, Node } from "./node.ts";
+import { middlewareName, type Edge, type Middleware } from "./edge.ts";
+import type { Context, Fn, Node, Step } from "./node.ts";
 
 /** The edge argument of then: optional when the output already fits the next input. */
 type EdgeArg<A, B> = [A] extends [B] ? [edge?: Edge<A, B>] : [edge: Edge<A, B>];
@@ -8,14 +8,16 @@ type EdgeArg<A, B> = [A] extends [B] ? [edge?: Edge<A, B>] : [edge: Edge<A, B>];
 export class Flow<I, O> {
   readonly name: string;
   private readonly fn: Fn<I, O>;
+  private readonly steps: Step[];
 
-  private constructor(name: string, fn: Fn<I, O>) {
+  private constructor(name: string, fn: Fn<I, O>, steps: Step[]) {
     this.name = name;
     this.fn = fn;
+    this.steps = steps;
   }
 
   static start<I>(name: string): Flow<I, I> {
-    return new Flow<I, I>(name, async (input) => input);
+    return new Flow<I, I>(name, async (input) => input, []);
   }
 
   /** Runs node after the flow, through the edge's map and middleware. */
@@ -23,15 +25,21 @@ export class Flow<I, O> {
   // oxlint-disable-next-line unicorn/no-thenable
   then<A, P>(node: Node<A, P>, ...[edge]: EdgeArg<O, A>): Flow<I, P> {
     const map = edge?.map as ((o: O, ctx: Context) => A | Promise<A>) | undefined;
-    const run = wrap(node, edge?.use ?? []);
-    return new Flow<I, P>(this.name, async (input, ctx) => {
-      const out = await this.fn(input, ctx);
-      return run(map ? await map(out, ctx) : (out as unknown as A), ctx);
-    });
+    const use = edge?.use ?? [];
+    const run = wrap(node, use);
+    const step: Step = { node: node as Node<never, unknown>, map: map !== undefined, use: use.map(middlewareName) };
+    return new Flow<I, P>(
+      this.name,
+      async (input, ctx) => {
+        const out = await this.fn(input, ctx);
+        return run(map ? await map(out, ctx) : (out as unknown as A), ctx);
+      },
+      [...this.steps, step],
+    );
   }
 
   build(): Node<I, O> {
-    return { name: this.name, run: this.fn };
+    return { name: this.name, run: this.fn, shape: { kind: "flow", steps: this.steps } };
   }
 }
 
@@ -60,6 +68,7 @@ export function until<A>(name: string, body: Node<A, A>, done: (a: A) => boolean
   const run = wrap(body, []);
   return {
     name,
+    shape: { kind: "until", body: body as Node<never, unknown>, max },
     run: async (input, ctx) => {
       let a = input;
       for (let i = 0; i < max; i++) {
@@ -79,6 +88,7 @@ export function until<A>(name: string, body: Node<A, A>, done: (a: A) => boolean
 export function assign<S extends object, K extends string, O>(key: K, node: Node<S, O>): Node<S, S & { [P in K]: O }> {
   return {
     name: node.name,
+    shape: { kind: "assign", key, node: node as Node<never, unknown> },
     run: async (state, ctx) => ({ ...state, [key]: await node.run(state, ctx) }) as S & { [P in K]: O },
   };
 }
@@ -101,6 +111,7 @@ export function parallel<T extends Record<string, Node<never, unknown>>>(
   );
   return {
     name,
+    shape: { kind: "parallel", branches: nodes, use: (opts.use ?? []).map(middlewareName) },
     run: async (input, ctx) =>
       Object.fromEntries(
         await Promise.all(runs.map(async ([key, run]) => [key, await run(input as never, ctx)])),

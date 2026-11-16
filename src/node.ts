@@ -5,6 +5,24 @@ export type Fn<I, O> = (input: I, ctx: Context) => Promise<O>;
 export interface Node<I, O> {
   readonly name: string;
   readonly run: Fn<I, O>;
+  /** How the node is built, for drawing it (toMermaid). A node without one is drawn as code. */
+  readonly shape?: Shape;
+}
+
+/** What toMermaid draws: the parts a node is built from. */
+export type Shape =
+  | { kind: "fn" }
+  | { kind: "agent" }
+  | { kind: "flow"; steps: Step[] }
+  | { kind: "parallel"; branches: Record<string, Node<never, unknown>>; use: string[] }
+  | { kind: "until"; body: Node<never, unknown>; max: number }
+  | { kind: "assign"; key: string; node: Node<never, unknown> };
+
+/** A node of a flow and the edge into it: whether it maps, and the names of its middleware. */
+export interface Step {
+  node: Node<never, unknown>;
+  map: boolean;
+  use: string[];
 }
 
 /** What a run records about its nodes, in order. */
@@ -48,5 +66,5 @@ export interface Store {
 
 /** A node that runs code: deterministic steps such as builds, git, and pull requests. */
 export function fnNode<I, O>(name: string, run: Fn<I, O>): Node<I, O> {
-  return { name, run };
+  return { name, run, shape: { kind: "fn" } };
 }

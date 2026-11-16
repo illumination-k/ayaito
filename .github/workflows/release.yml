@@ -1,6 +1,7 @@
 # Stages a release on npm when a v* tag is pushed. Authenticates with npm trusted publishing (OIDC),
 # so no token is stored; the trusted publisher (this repository, workflow and environment) on
-# npmjs.com may only stage. A maintainer publishes it with `npm stage approve <id>` (2FA).
+# npmjs.com may only stage. A maintainer publishes it with `npm stage approve <id>` (2FA). The npm
+# environment only accepts v* tags.
 name: Release
 
 on:

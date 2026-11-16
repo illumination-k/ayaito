@@ -38,3 +38,15 @@ await run(flow, input, { runId, store: new FsStore(".runs") });
   `review` は検証を通った出力の問題（原文にない引用など）を返す関数で、同じ回数の中で差し戻し、使い切ったら
   出力をそのまま返す。スキーマにタプルは使わない（CLI は draft-07、API は 2020-12 で検証し、どちらかで落ちる）
 - API エラー（スキーマの不正など）は subtype が success のまま `is_error` で返るので、例外にする
+
+## フローの図
+
+`toMermaid(flow)` はノードを [Mermaid](https://mermaid.js.org/) の flowchart にする（GitHub は README や PR の
+markdown で描画する）。コードは四角、エージェントは角丸、フロー・`parallel`・`until` はサブグラフで、
+エッジには `map` の有無と次のノードを包む middleware を書く。
+
+````ts
+console.log(["```mermaid", toMermaid(flow), "```"].join("\n"));
+````
+
+middleware は関数名で表示する。無名のものは `named("audit", m)` で名前を付ける。

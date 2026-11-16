@@ -18,7 +18,7 @@ export type Edge<A, B> = { use?: Middleware[] } & ([A] extends [B] ? { map?: Edg
 
 /** Runs the node again when it throws, up to attempts times in all, waiting delayMs × attempt. */
 export function retry(opts: { attempts: number; delayMs?: number }): Middleware {
-  return (node, next) => async (input, ctx) => {
+  return named(`retry ×${opts.attempts}`, (node, next) => async (input, ctx) => {
     for (let attempt = 1; ; attempt++) {
       try {
         return await next(input, ctx);
@@ -28,7 +28,7 @@ export function retry(opts: { attempts: number; delayMs?: number }): Middleware 
         await new Promise((r) => setTimeout(r, (opts.delayMs ?? 0) * attempt));
       }
     }
-  };
+  });
 }
 
 /**
@@ -36,11 +36,11 @@ export function retry(opts: { attempts: number; delayMs?: number }): Middleware 
  * notifying someone, without changing the output.
  */
 export function effect(fn: (output: unknown, ctx: Context, node: string) => void | Promise<void>): Middleware {
-  return (node, next) => async (input, ctx) => {
+  return named("effect", (node, next) => async (input, ctx) => {
     const output = await next(input, ctx);
     await fn(output, ctx, node.name);
     return output;
-  };
+  });
 }
 
 /**
@@ -59,6 +59,18 @@ export const checkpoint: Middleware = (node, next) => async (input, ctx) => {
   await ctx.store.put(ctx.runId, key, { input, output });
   return output;
 };
+
+/**
+ * Names a middleware for drawing (toMermaid). A middleware is otherwise drawn by its function
+ * name, so one declared as `const audit: Middleware = ...` needs no name.
+ */
+export function named(name: string, m: Middleware): Middleware {
+  return Object.defineProperty(m, "name", { value: name });
+}
+
+export function middlewareName(m: Middleware): string {
+  return m.name || "middleware";
+}
 
 export function checkpointKey(name: string, input: unknown): string {
   const hash = createHash("sha256")
