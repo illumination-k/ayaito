@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
-import { agentNode, assign, checkpoint, fnNode, Flow, parallel, retry, toMermaid, until } from "../src/index.ts";
+import {
+  agentNode,
+  assign,
+  checkpoint,
+  defineRuntime,
+  fnNode,
+  Flow,
+  parallel,
+  retry,
+  toMermaid,
+  until,
+} from "../src/index.ts";
 
-const noQuery = async function* () {};
+const noRuntime = defineRuntime({ name: "none", run: async () => ({ text: "", sessionId: "" }) });
 
 describe("toMermaid", () => {
   it("draws flows, agents, parallel nodes, loops and edges", () => {
     const prepare = fnNode("prepare", async (s: { text: string }) => s);
-    const topic = agentNode("select topic", { prompt: () => "", output: z.string() }, noQuery);
+    const topic = agentNode("select topic", { prompt: () => "", output: z.string() }, noRuntime);
     const fix = fnNode("fix", async (n: number) => n + 1);
     const checks = parallel(
       "checks",

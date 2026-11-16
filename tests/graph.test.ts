@@ -2,24 +2,9 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vite-plus/test";
-import { z } from "zod";
 
-import {
-  agentNode,
-  assign,
-  checkpoint,
-  effect,
-  fnNode,
-  Flow,
-  FsStore,
-  parallel,
-  retry,
-  run,
-  until,
-  usageReport,
-} from "../src/index.ts";
+import { assign, checkpoint, effect, fnNode, Flow, FsStore, parallel, retry, run, Stop, until } from "../src/index.ts";
 
 const tmpStore = async () => new FsStore(await mkdtemp(join(tmpdir(), "ayaito-")));
 
@@ -145,7 +130,7 @@ describe("parallel", () => {
 
     const { output, events } = await run(both, 3, { runId: "r", store: await tmpStore() });
 
-    const typed: { double: number; text: string } = output;
+    const typed: { double: number; text: string } | undefined = output;
     expect(typed).toEqual({ double: 6, text: "#3" });
     expect(most).toBe(2);
     expect(
@@ -157,122 +142,52 @@ describe("parallel", () => {
   });
 });
 
-describe("agentNode", () => {
-  const result = (fields: Record<string, unknown>) => ({
-    type: "result",
-    total_cost_usd: 0.5,
-    errors: [],
-    modelUsage: {
-      "claude-opus-5-5": {
-        inputTokens: 10,
-        outputTokens: 2000,
-        cacheReadInputTokens: 30000,
-        cacheCreationInputTokens: 4000,
-      },
-    },
-    ...fields,
-  });
-  const fakeQuery = (message: Record<string, unknown>, seen: Options[] = []) =>
-    async function* (params: { prompt: string; options?: Options }): AsyncGenerator<SDKMessage> {
-      seen.push({ ...params.options, systemPrompt: params.prompt });
-      yield message as unknown as SDKMessage;
-    };
+describe("Stop and cancellation", () => {
+  it("ends the run early as a success when a node throws Stop", async () => {
+    let after = false;
+    const flow = Flow.start<number>("f")
+      .then(
+        fnNode("find", async (n: number): Promise<number> => {
+          throw new Stop(`nothing to do for ${n}`);
+        }),
+      )
+      .then(fnNode("after", async (n: number) => ((after = true), n)))
+      .build();
 
-  it("returns the validated structured output and reports tokens per node", async () => {
-    const seen: Options[] = [];
-    const store = await tmpStore();
-    const node = agentNode(
-      "pick",
-      { prompt: (n: number) => `pick ${n}`, output: z.object({ topic: z.string() }), options: { cwd: "/x" } },
-      fakeQuery(result({ subtype: "success", structured_output: { topic: "婚活" } }), seen),
-    );
-    const { output, costUsd } = await run(node, 3, { runId: "r", store });
-    await run(node, 4, { runId: "r", store });
+    const result = await run(flow, 1, { runId: "r", store: await tmpStore() });
 
-    expect(output).toEqual({ topic: "婚活" });
-    expect(costUsd).toBe(0.5);
-    expect(usageReport(await store.events("r"))).toContain("| pick | 2 | 20 | 4,000 | 60,000 | 8,000 | 1.00 |");
-    expect(seen[0]?.systemPrompt).toBe("pick 3");
-    expect(seen[0]?.cwd).toBe("/x");
-    expect(seen[0]?.outputFormat?.schema).toMatchObject({ type: "object", required: ["topic"] });
-    expect(seen[0]?.outputFormat?.schema).not.toHaveProperty("$schema");
+    expect(result).toMatchObject({ status: "stopped", node: "find", reason: "nothing to do for 1" });
+    expect(after).toBe(false);
+    expect(result.events.filter((e) => e.type === "stop")).toHaveLength(1);
+    expect(result.events.some((e) => e.type === "error")).toBe(false);
   });
 
-  it("throws when the agent fails or returns invalid output", async () => {
-    const out = z.object({ topic: z.string() });
-    const store = await tmpStore();
-    const failed = agentNode(
-      "a",
-      { prompt: () => "", output: out },
-      fakeQuery(result({ subtype: "error_max_budget_usd", errors: ["over budget"] })),
+  it("aborts the other nodes of parallel when one fails", async () => {
+    let aborted = false;
+    const waits = fnNode("waits", async (_: number, ctx) => {
+      await new Promise((resolve) => ctx.signal.addEventListener("abort", resolve, { once: true }));
+      aborted = true;
+      return 0;
+    });
+    const fails = fnNode("fails", async (): Promise<number> => {
+      throw new Error("boom");
+    });
+
+    await expect(run(parallel("both", { waits, fails }), 1, { runId: "r", store: await tmpStore() })).rejects.toThrow(
+      "boom",
     );
-    await expect(run(failed, 0, { runId: "r", store })).rejects.toThrow("error_max_budget_usd: over budget");
-    const apiError = agentNode(
-      "e",
-      { prompt: () => "", output: out },
-      fakeQuery(result({ subtype: "success", is_error: true, result: "API Error: 400 invalid schema" })),
-    );
-    await expect(run(apiError, 0, { runId: "r", store })).rejects.toThrow("e: API Error: 400 invalid schema");
-    const invalid = agentNode(
-      "b",
-      { prompt: () => "", output: out },
-      fakeQuery(result({ subtype: "success", structured_output: { topic: 1 } })),
-    );
-    await expect(run(invalid, 0, { runId: "r", store })).rejects.toThrow();
+    expect(aborted).toBe(true);
   });
 
-  it("sends review problems back, and returns the output as it is once repairs run out", async () => {
-    const out = z.object({ quote: z.string() });
-    const seen: string[] = [];
-    const query = async function* (params: { prompt: string; options?: Options }): AsyncGenerator<SDKMessage> {
-      seen.push(params.prompt);
-      yield result({
-        subtype: "success",
-        session_id: "s1",
-        structured_output: { quote: "invented" },
-      }) as unknown as SDKMessage;
-    };
-    const node = agentNode(
-      "cite",
-      {
-        prompt: () => "cite",
-        output: out,
-        repairs: 2,
-        review: (o) => (o.quote === "invented" ? [`not in the paper: ${o.quote}`] : []),
-      },
-      query,
+  it("starts no node once the run is cancelled", async () => {
+    const abort = new AbortController();
+    const flow = Flow.start<number>("f")
+      .then(fnNode("first", async (n: number) => (abort.abort(new Error("cancelled")), n)))
+      .then(fnNode("second", async (n: number) => n))
+      .build();
+
+    await expect(run(flow, 1, { runId: "r", store: await tmpStore(), signal: abort.signal })).rejects.toThrow(
+      "cancelled",
     );
-
-    const { output } = await run(node, 0, { runId: "r", store: await tmpStore() });
-
-    expect(output).toEqual({ quote: "invented" });
-    expect(seen).toHaveLength(3);
-    expect(seen[1]).toContain("- not in the paper: invented");
-  });
-
-  it("sends the validation errors back in the same session when repairs are allowed", async () => {
-    const out = z.object({ topic: z.string().min(1) });
-    const answers = [{ topic: "" }, { topic: "婚活" }];
-    const seen: { prompt: string; resume?: string }[] = [];
-    const query = async function* (params: { prompt: string; options?: Options }): AsyncGenerator<SDKMessage> {
-      seen.push({ prompt: params.prompt, resume: params.options?.resume });
-      const structured_output = answers[seen.length - 1];
-      yield result({ subtype: "success", session_id: "s1", structured_output }) as unknown as SDKMessage;
-    };
-
-    const { output, events } = await run(
-      agentNode("pick", { prompt: () => "pick", output: out, repairs: 1 }, query),
-      0,
-      {
-        runId: "r",
-        store: await tmpStore(),
-      },
-    );
-
-    expect(output).toEqual({ topic: "婚活" });
-    expect(seen[1]?.resume).toBe("s1");
-    expect(seen[1]?.prompt).toContain("- topic:");
-    expect(events.filter((e) => e.type === "retry")).toHaveLength(1);
-    expect(events.filter((e) => e.type === "usage")).toHaveLength(2);
   });
 });

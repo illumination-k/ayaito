@@ -1,117 +1,107 @@
+import type { Context, Node } from "./node.ts";
+import { refine, type RefineResult, type Verdict } from "./refine.ts";
 import {
-  createSdkMcpServer,
-  query as sdkQuery,
-  type Options,
-  type SDKMessage,
-  type SdkMcpToolDefinition,
-} from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
-
-import type { Node } from "./node.ts";
+  type Access,
+  type AgentRequest,
+  type AgentResult,
+  type AgentRuntime,
+  OutputError,
+  type OutputSchema,
+  type Usage,
+} from "./runtime.ts";
 
 export interface AgentConfig<I, O> {
   /** The task, built from the node's input. */
   prompt: (input: I) => string;
-  /** The output the agent must return; it is the node's output after validation. */
-  output: z.ZodType<O>;
-  /**
-   * Tools the agent may call besides the built-in ones, which makes the node a ReAct loop
-   * over them. They are served as the in-process MCP server named after the node.
-   */
-  tools?: SdkMcpToolDefinition<any>[];
-  /** Agent SDK options: cwd, allowedTools, permissionMode, maxBudgetUsd, maxTurns, ... */
-  options?: Options;
-  /**
-   * How many times to send the validation errors back, in the same session, when the output
-   * fails the schema. The JSON Schema the agent is held to cannot express zod refinements,
-   * so an output can satisfy it and still fail here. Defaults to 0.
-   */
-  repairs?: number;
-  /**
-   * Problems with an output that passed validation, such as a quote the source does not
-   * contain. They go back to the agent like validation errors, within the same `repairs`;
-   * once those run out the output is returned as it is, so the caller can report them.
-   */
-  review?: (output: O, input: I) => string[];
+  /** The output the agent must return. */
+  output: OutputSchema<O>;
+  system?: string;
+  model?: string;
+  cwd?: string;
+  access?: Access;
 }
 
-export type Query = (params: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
-
-export const defaultOptions: Options = {
-  model: "claude-opus-5-5",
-  // AGENTS.md / CLAUDE.md and the skills of the repository, not the user's settings.
-  settingSources: ["project"],
-};
-
 /**
- * A node that runs Claude through the Agent SDK until it returns output. The tokens and the
- * estimated cost of the call are emitted as a usage event; a run that ends without valid
- * output throws.
+ * A node that runs an agent and returns its validated output. An answer that misses the
+ * schema goes back to the same session, up to attempts calls in all (default 1); after
+ * that the node throws.
  */
-export function agentNode<I, O>(name: string, config: AgentConfig<I, O>, query: Query = sdkQuery): Node<I, O> {
+export function agentNode<I, O>(
+  name: string,
+  config: AgentConfig<I, O> & { attempts?: number },
+  runtime: AgentRuntime,
+): Node<I, O> {
+  const { attempts, ...agent } = config;
+  const node = refineNode(
+    name,
+    { ...agent, check: (result) => ({ ok: true, value: result.structured }), maxAttempts: attempts ?? 1 },
+    runtime,
+  );
   return {
     name,
     shape: { kind: "agent" },
     run: async (input, ctx) => {
-      const options: Options = { ...defaultOptions, ...config.options };
-      if (config.tools?.length) {
-        options.mcpServers = { ...options.mcpServers, [name]: createSdkMcpServer({ name, tools: config.tools }) };
-        options.allowedTools = [...(options.allowedTools ?? []), `mcp__${name}`];
-      }
-      // Claude Code rejects the draft 2020-12 $schema that zod writes; the schema is valid without it.
-      // No tuples: the CLI rejects their prefixItems, and the API their draft-07 form.
-      const { $schema: _, ...schema } = z.toJSONSchema(config.output) as Record<string, unknown>;
-      options.outputFormat = { type: "json_schema", schema };
-
-      let prompt = config.prompt(input);
-      let resume: string | undefined;
-      for (let attempt = 0; ; attempt++) {
-        const message = await lastResult(query({ prompt, options: { ...options, resume } }));
-        if (message === undefined) break;
-        const models = tokensByModel(message);
-        ctx.emit({ type: "usage", node: name, usd: message.total_cost_usd, models });
-        if (message.subtype !== "success") {
-          throw new Error(`${name}: ${message.subtype}: ${message.errors.join("; ")}`);
-        }
-        // An API error (a rejected schema, say) still ends as subtype "success", with no output.
-        if (message.is_error) throw new Error(`${name}: ${message.result}`);
-        const parsed = config.output.safeParse(message.structured_output);
-        const problems = parsed.success
-          ? (config.review?.(parsed.data, input) ?? [])
-          : parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
-        const issues = problems.map((p) => `- ${p}`).join("\n");
-        if (attempt >= (config.repairs ?? 0) || problems.length === 0) {
-          if (parsed.success) return parsed.data;
-          throw new Error(`${name}: invalid output:\n${issues}`);
-        }
-        ctx.emit({ type: "retry", node: name, attempt: attempt + 1, error: issues });
-        prompt = `Your output has these problems:\n${issues}\n\nReturn the whole output again with each of these fixed.`;
-        resume = message.session_id;
-      }
-      throw new Error(`${name}: the agent ended without a result`);
+      const result = await node.run(input, ctx);
+      if (!result.ok) throw new Error(`${name}: ${result.feedback}`);
+      return result.value;
     },
   };
 }
 
-type ResultMessage = Extract<SDKMessage, { type: "result" }>;
-
-function tokensByModel(message: ResultMessage) {
-  return Object.fromEntries(
-    Object.entries(message.modelUsage ?? {}).map(([model, u]) => [
-      model,
-      {
-        input: u.inputTokens,
-        output: u.outputTokens,
-        cacheRead: u.cacheReadInputTokens,
-        cacheCreation: u.cacheCreationInputTokens,
-      },
-    ]),
-  );
+/**
+ * A node that refines: runs the agent, lets check judge the result (a quote the source does
+ * not contain, a test that fails), and sends check's feedback back to the same session, up
+ * to maxAttempts calls in all. Its output is the RefineResult, so a later node can record
+ * what never passed.
+ */
+export function refineNode<I, O, T>(
+  name: string,
+  config: AgentConfig<I, O> & {
+    check: (result: AgentResult<O>, input: I, attempt: number) => Verdict<T> | Promise<Verdict<T>>;
+    maxAttempts: number;
+  },
+  runtime: AgentRuntime,
+): Node<I, RefineResult<T>> {
+  const { prompt, check, maxAttempts, ...request } = config;
+  return {
+    name,
+    shape: { kind: "agent" },
+    run: async (input, ctx) =>
+      refine({
+        runtime: metered(runtime, name, ctx),
+        request: { ...request, prompt: prompt(input), signal: ctx.signal },
+        check: async (result, attempt) => {
+          const verdict = await check(result, input, attempt);
+          if (!verdict.ok) ctx.emit({ type: "retry", node: name, attempt, error: verdict.feedback });
+          return verdict;
+        },
+        maxAttempts,
+      }),
+  };
 }
 
-async function lastResult(messages: AsyncIterable<SDKMessage>): Promise<ResultMessage | undefined> {
-  for await (const message of messages) {
-    if (message.type === "result") return message;
-  }
-  return undefined;
+/** Records the usage of every call, and a schema miss as a retry. */
+function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntime {
+  let calls = 0;
+  const usage = ({ costUsd, models }: Usage) => {
+    if (costUsd !== undefined || models) ctx.emit({ type: "usage", node, usd: costUsd, models: models ?? {} });
+  };
+  return {
+    name: runtime.name,
+    close: () => runtime.close(),
+    async run<T>(request: AgentRequest<T>) {
+      calls++;
+      try {
+        const result = await runtime.run(request);
+        usage(result);
+        return result;
+      } catch (error) {
+        if (error instanceof OutputError) {
+          usage(error.usage);
+          ctx.emit({ type: "retry", node, attempt: calls, error: error.issues });
+        }
+        throw error;
+      }
+    },
+  };
 }
