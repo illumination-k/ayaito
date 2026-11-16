@@ -1,25 +1,26 @@
-import type { Context, Node, RunEvent, Store, Tokens } from "./node.ts";
+import { type Context, type Node, type RunEvent, Stop, type Store, type Tokens } from "./node.ts";
 
-export interface RunResult<O> {
-  output: O;
-  costUsd: number;
-  events: RunEvent[];
-}
+/** "stopped" when a node threw Stop: the run ended early, as a success. */
+export type RunResult<O> = { costUsd: number; events: RunEvent[] } & (
+  | { status: "done"; output: O }
+  | { status: "stopped"; node: string; reason: string; output?: undefined }
+);
 
 /**
  * Runs a node (usually a built flow) as runId. Running the same runId again resumes it:
- * nodes behind a checkpoint edge return their saved output.
+ * nodes behind a checkpoint edge return their saved output. Aborting signal cancels the run.
  */
 export async function run<I, O>(
   node: Node<I, O>,
   input: I,
-  opts: { runId: string; store: Store; log?: (event: RunEvent) => void },
+  opts: { runId: string; store: Store; log?: (event: RunEvent) => void; signal?: AbortSignal },
 ): Promise<RunResult<O>> {
   const events: RunEvent[] = [];
   let pending = Promise.resolve();
   const ctx: Context = {
     runId: opts.runId,
     store: opts.store,
+    signal: opts.signal ?? new AbortController().signal,
     history: async () => {
       await pending;
       return opts.store.events(opts.runId);
@@ -34,14 +35,19 @@ export async function run<I, O>(
   };
   try {
     const output = await node.run(input, ctx);
-    return { output, costUsd: totalCost(events), events };
+    return { status: "done", output, costUsd: totalCost(events), events };
+  } catch (error) {
+    if (!(error instanceof Stop)) throw error;
+    const stopped = { node: error.node ?? node.name, reason: error.message };
+    return { status: "stopped", ...stopped, costUsd: totalCost(events), events };
   } finally {
     await pending;
   }
 }
 
+/** The cost the runtimes reported; calls of a runtime that reports none (codex) add nothing. */
 export function totalCost(events: RunEvent[]): number {
-  return events.reduce((sum, e) => (e.type === "usage" ? sum + e.usd : sum), 0);
+  return events.reduce((sum, e) => (e.type === "usage" ? sum + (e.usd ?? 0) : sum), 0);
 }
 
 /**
@@ -49,12 +55,12 @@ export function totalCost(events: RunEvent[]): number {
  * rounds, earlier attempts of a resumed run), for finding where to cut cost.
  */
 export function usageReport(events: RunEvent[]): string {
-  const rows = new Map<string, { calls: number; usd: number } & Tokens>();
+  const rows = new Map<string, { calls: number; usd?: number } & Tokens>();
   for (const e of events) {
     if (e.type !== "usage") continue;
-    const r = rows.get(e.node) ?? { calls: 0, usd: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
+    const r = rows.get(e.node) ?? { calls: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0 };
     r.calls++;
-    r.usd += e.usd;
+    if (e.usd !== undefined) r.usd = (r.usd ?? 0) + e.usd;
     for (const t of Object.values(e.models)) {
       r.input += t.input;
       r.output += t.output;
@@ -70,7 +76,7 @@ export function usageReport(events: RunEvent[]): string {
   ];
   for (const [node, r] of rows) {
     lines.push(
-      `| ${node} | ${r.calls} | ${n(r.input)} | ${n(r.output)} | ${n(r.cacheRead)} | ${n(r.cacheCreation)} | ${r.usd.toFixed(2)} |`,
+      `| ${node} | ${r.calls} | ${n(r.input)} | ${n(r.output)} | ${n(r.cacheRead)} | ${n(r.cacheCreation)} | ${r.usd?.toFixed(2) ?? "-"} |`,
     );
   }
   return lines.join("\n");

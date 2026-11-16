@@ -32,7 +32,9 @@ export type RunEvent =
   | { type: "skip"; node: string; at: string; reason: string }
   | { type: "retry"; node: string; at: string; attempt: number; error: string }
   | { type: "error"; node: string; at: string; error: string }
-  | { type: "usage"; node: string; at: string; usd: number; models: Record<string, Tokens> };
+  | { type: "stop"; node: string; at: string; reason: string }
+  /** usd is absent when the runtime reports tokens only (codex). */
+  | { type: "usage"; node: string; at: string; usd?: number; models: Record<string, Tokens> };
 
 /** Tokens one model used in an agent call. */
 export interface Tokens {
@@ -52,6 +54,18 @@ export interface Context {
   readonly emit: (event: NewRunEvent) => void;
   /** Every event of the run so far, including earlier attempts of a resumed run. */
   readonly history: () => Promise<RunEvent[]>;
+  /** Aborted when the run is cancelled, or when a sibling in parallel fails. */
+  readonly signal: AbortSignal;
+}
+
+/**
+ * Ends a run early as a success: a node that finds nothing to do throws it, so that nothing
+ * after it starts. run returns status "stopped" with the node and the reason.
+ */
+export class Stop extends Error {
+  override name = "Stop";
+  /** The node that threw it, set by the flow that runs the node. */
+  node?: string;
 }
 
 /** Keeps the outputs and events of runs, so that a run can be resumed. */

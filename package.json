@@ -1,13 +1,15 @@
 {
   "name": "ayaito",
-  "version": "0.1.1",
-  "description": "A small engine for building typed agent workflows as graphs on the Claude Agent SDK.",
+  "version": "0.2.0",
+  "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex or opencode.",
   "keywords": [
     "agent",
     "claude",
     "claude-agent-sdk",
+    "codex",
     "graph",
     "llm",
+    "opencode",
     "workflow"
   ],
   "homepage": "https://github.com/illumination-k/ayaito#readme",
@@ -26,6 +28,9 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./claude": "./dist/claude.mjs",
+    "./codex": "./dist/codex.mjs",
+    "./opencode": "./dist/opencode.mjs",
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -40,6 +45,8 @@
   },
   "devDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.309",
+    "@openai/codex-sdk": "^0.169.0",
+    "@opencode-ai/sdk": "^1.19.5",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:",
@@ -47,7 +54,19 @@
   },
   "peerDependencies": {
     "@anthropic-ai/claude-agent-sdk": ">=0.3.309 <0.4",
-    "zod": "^4"
+    "@openai/codex-sdk": ">=0.169.0 <0.170",
+    "@opencode-ai/sdk": "^1.19.5"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    },
+    "@openai/codex-sdk": {
+      "optional": true
+    },
+    "@opencode-ai/sdk": {
+      "optional": true
+    }
   },
   "devEngines": {
     "packageManager": {
