@@ -55,8 +55,7 @@ vp test
 vp pack    # build dist/
 ```
 
-Releases: bump `version` in `package.json` and push a `v<version>` tag. The workflow stages the
-release on npm; publish it with `npm stage approve <id>`.
+Releases: bump `version` in `package.json`, then push a `v<version>` tag.
 
 ## License
 
