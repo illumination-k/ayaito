@@ -51,6 +51,7 @@ export const defaultOptions: Options = {
 export function agentNode<I, O>(name: string, config: AgentConfig<I, O>, query: Query = sdkQuery): Node<I, O> {
   return {
     name,
+    shape: { kind: "agent" },
     run: async (input, ctx) => {
       const options: Options = { ...defaultOptions, ...config.options };
       if (config.tools?.length) {

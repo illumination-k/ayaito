@@ -44,6 +44,18 @@ await run(flow, input, { runId, store: new FsStore(".runs") });
   fails).
 - API errors (such as an invalid schema) come back as `is_error` with a `success` subtype; they are thrown.
 
+## Drawing a flow
+
+`toMermaid(flow)` draws a node as a [Mermaid](https://mermaid.js.org/) flowchart, which GitHub renders in
+markdown (a README, a pull request). Code is a box, an agent a rounded box, and flows, `parallel` and
+`until` are subgraphs; each edge says whether it maps and which middleware wraps the next node.
+
+````ts
+console.log(["```mermaid", toMermaid(flow), "```"].join("\n"));
+````
+
+A middleware is labeled by its function name; name an anonymous one with `named("audit", m)`.
+
 ## Development
 
 Uses [Vite+](https://viteplus.dev/).
