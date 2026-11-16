@@ -1,6 +1,6 @@
 {
   "name": "ayaito",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A small engine for building typed agent workflows as graphs on the Claude Agent SDK.",
   "keywords": [
     "agent",
