@@ -1,4 +1,11 @@
-import { agent, type AgentCapabilities, methods, type PermissionOption, type ToolKind } from "@agentclientprotocol/sdk";
+import {
+  agent,
+  type AgentCapabilities,
+  methods,
+  type PermissionOption,
+  type ToolKind,
+  type Usage,
+} from "@agentclientprotocol/sdk/unstable";
 import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
@@ -17,6 +24,7 @@ interface Turn {
   asks?: ToolKind;
   /** The cost of the session after the turn. */
   cost?: number;
+  usage?: Usage;
   /** Waits for session/cancel instead of answering. */
   hangs?: boolean;
 }
@@ -99,7 +107,7 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}) {
         const update = { sessionUpdate: "usage_update" as const, used: 1, size: 2, cost };
         await client.notify(methods.client.session.update, { sessionId, update });
       }
-      return { stopReason: "end_turn" as const };
+      return { stopReason: "end_turn" as const, usage: turn.usage };
     });
   const runtime = acpRuntime({ command: "fake" }, (client) => ({ connection: client.connect(app), close() {} }));
   const sent = (method: string) => seen.requests.filter(([m]) => m === method).map(([, params]) => params);
@@ -152,13 +160,19 @@ describe("acpRuntime", () => {
   it("keeps a session for the next call and reports the cost of each turn", async () => {
     const { runtime, sent } = fakeAgent([
       { says: ["one"], cost: 0.5 },
-      { says: ["two"], cost: 0.75 },
+      {
+        says: ["two"],
+        cost: 0.75,
+        usage: { totalTokens: 175, inputTokens: 10, outputTokens: 20, thoughtTokens: 5, cachedReadTokens: 140 },
+      },
     ]);
     const first = await runtime.run({ prompt: "1", system: "sys" });
     const second = await runtime.run({ prompt: "2", system: "sys", sessionId: first.sessionId, model: "large" });
 
     expect([first.text, first.costUsd]).toEqual(["one", 0.5]);
     expect([second.text, second.costUsd, second.sessionId]).toEqual(["two", 0.25, "s1"]);
+    expect(first.models).toBeUndefined();
+    expect(second.models).toEqual({ large: { input: 10, output: 25, cacheRead: 140, cacheCreation: 0 } });
     expect(sent("session/new")).toHaveLength(1);
     expect(sent("session/set_config_option")).toEqual([{ sessionId: "s1", configId: "model", value: "large" }]);
     // The system prompt leads the first prompt only.

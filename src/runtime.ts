@@ -60,7 +60,7 @@ export interface AgentRequest<T = undefined> {
 
 /** What a call cost, as far as the runtime reports it. */
 export interface Usage {
-  /** Absent when the runtime reports tokens only (codex), or when an ACP agent reports no cost. */
+  /** Absent when the runtime reports tokens only (codex, or an ACP agent that sends no cost). */
   costUsd?: number;
   models?: Record<string, Tokens>;
 }

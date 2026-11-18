@@ -16,8 +16,9 @@ import {
   PROTOCOL_VERSION,
   type RequestPermissionResponse,
   type ToolKind,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 
+import type { Tokens } from "./node.ts";
 import { type Access, type AgentRuntime, defineRuntime, OutputError } from "./runtime.ts";
 
 export interface AcpRuntimeOptions {
@@ -53,7 +54,8 @@ interface Session {
  * for it: read-only (the default) allows reading and searching and refuses the rest. An
  * agent started in a mode that does not ask is not held back, so leave it in its default
  * mode. ACP has no structured output: the schema goes into the prompt and the answer is
- * parsed from the text. Usage has the cost only, when the agent reports it in USD.
+ * parsed from the text. Usage has what the agent reports: the cost when it is in USD, and the
+ * tokens of the turn.
  */
 export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) => start(app, options)): AgentRuntime {
   const sessions = new Map<string, Session>();
@@ -170,15 +172,28 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
       session.text = "";
       session.afterTool = false;
       const costBefore = session.costUsd ?? 0;
+      let models: Record<string, Tokens> | undefined;
       const cancel = () => void agent.notify(methods.agent.session.cancel, { sessionId }).catch(() => {});
       request.signal?.addEventListener("abort", cancel, { once: true });
       try {
-        const { stopReason } = await agent.request(methods.agent.session.prompt, {
+        const { stopReason, usage } = await agent.request(methods.agent.session.prompt, {
           sessionId,
           prompt: [{ type: "text", text: prompt }],
         });
         if (stopReason === "cancelled") request.signal?.throwIfAborted();
         if (stopReason !== "end_turn") throw new Error(`acp: the turn ended with ${stopReason}`);
+        // Still unstable in ACP, so only some agents send it. Thought tokens count as output, as on opencode.
+        if (usage) {
+          const model = request.model ?? (typeof session.model?.value === "string" ? session.model.value : "acp");
+          models = {
+            [model]: {
+              input: usage.inputTokens,
+              output: usage.outputTokens + (usage.thoughtTokens ?? 0),
+              cacheRead: usage.cachedReadTokens ?? 0,
+              cacheCreation: usage.cachedWriteTokens ?? 0,
+            },
+          };
+        }
       } finally {
         request.signal?.removeEventListener("abort", cancel);
       }
@@ -190,10 +205,10 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
         try {
           structured = parseJson(text);
         } catch {
-          throw new OutputError(sessionId, "- (root): the answer could not be parsed as JSON", { costUsd });
+          throw new OutputError(sessionId, "- (root): the answer could not be parsed as JSON", { costUsd, models });
         }
       }
-      return { text, structured, sessionId, costUsd };
+      return { text, structured, sessionId, costUsd, models };
     },
     async close() {
       const current = connected;

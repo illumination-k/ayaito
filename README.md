@@ -46,7 +46,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   changed because an earlier node ran again runs again. To redo from a given node, use `store.invalidate`.
 - `run` takes a `signal` to cancel the run; no node starts after it is aborted, and agents get it too. When a
   node of `parallel` fails, the others are aborted.
-- Tokens and cost per model become `usage` events (codex reports tokens only, ACP the cost only). `usageReport(await ctx.history())`
+- Tokens and cost per model become `usage` events (codex reports tokens only). `usageReport(await ctx.history())`
   makes a per-node token table in markdown (it adds up runs before a resume and each pass of loops and retries).
 
 ### Agents

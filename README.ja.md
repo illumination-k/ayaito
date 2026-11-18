@@ -46,7 +46,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   走り直して入力が変わったノードは走り直す。特定のノードからやり直すときは `store.invalidate`
 - `run` に `signal` を渡すと実行を止められる。止めた後はノードを始めず、エージェントにも伝わる。
   `parallel` の 1 つが失敗すると、ほかも止める
-- モデル別のトークンと費用は `usage` イベントになる（codex はトークンだけ、ACP は費用だけ）。`usageReport(await ctx.history())` で
+- モデル別のトークンと費用は `usage` イベントになる（codex はトークンだけ）。`usageReport(await ctx.history())` で
   ノード別のトークン表（markdown）を作れる（再開前の実行や、ループ・リトライの各回も合算する）
 
 ### エージェント
