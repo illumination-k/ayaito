@@ -59,7 +59,7 @@ describe("agentNode", () => {
     expect(output).toEqual({ topic: "婚活" });
     expect(costUsd).toBe(0.5);
     expect(usageReport(await store.events("r"))).toContain("| pick | 2 | 20 | 4,000 | 60,000 | 8,000 | 1.00 |");
-    expect(seen[0]).toMatchObject({ prompt: "pick 3", system: "sys", cwd: "/x", access: "read-only" });
+    expect(seen[0]).toMatchObject({ prompt: "pick 3", node: "pick", system: "sys", cwd: "/x", access: "read-only" });
     expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(seen[0]?.outputSchema).toMatchObject({ type: "object", required: ["topic"] });
     expect(seen[0]?.outputSchema).not.toHaveProperty("$schema");
@@ -125,7 +125,7 @@ describe("refineNode", () => {
     const { output } = await run(node, "a real paper", { runId: "r", store: await tmpStore() });
 
     expect(output).toEqual({ ok: true, value: "REAL", attempts: 2, sessionId: "s1" });
-    expect(seen[1]).toMatchObject({ prompt: "not in the paper: invented", sessionId: "s1" });
+    expect(seen[1]).toMatchObject({ prompt: "not in the paper: invented", node: "cite", sessionId: "s1" });
   });
 
   it("returns what never passed as a result", async () => {

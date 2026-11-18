@@ -67,7 +67,8 @@ server. A request's `access` replaces the tools and permissions the runtime was 
   does the same outside a flow.
 - Codex needs every object strict (`z.strictObject`). Do not use tuples (the Claude CLI validates with draft-07
   and the API with 2020-12, and one of them rejects them).
-- `defineRuntime` makes a runtime from an adapter, for another agent or a test.
+- `defineRuntime` makes a runtime from an adapter, for another agent or a test. A request carries the name of
+  the node making it (`node`), for a runtime that shows or records its calls per node.
 
 ## Drawing a flow
 

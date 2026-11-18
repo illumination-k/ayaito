@@ -39,6 +39,11 @@ type ValidationResult<T> =
  */
 export interface AgentRequest<T = undefined> {
   prompt: string;
+  /**
+   * The node making the call, set by agentNode and refineNode. For a runtime that shows or
+   * records its calls per node; the built-in ones do not use it.
+   */
+  node?: string;
   system?: string;
   /** In the runtime's own naming: `claude-opus-5-5`, or `anthropic/claude-opus-5-5` on opencode. */
   model?: string;
