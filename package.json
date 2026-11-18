@@ -1,9 +1,11 @@
 {
   "name": "ayaito",
   "version": "0.2.0",
-  "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex or opencode.",
+  "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex, opencode or any ACP agent.",
   "keywords": [
+    "acp",
     "agent",
+    "agent-client-protocol",
     "claude",
     "claude-agent-sdk",
     "codex",
@@ -28,6 +30,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
+    "./acp": "./dist/acp.mjs",
     "./claude": "./dist/claude.mjs",
     "./codex": "./dist/codex.mjs",
     "./opencode": "./dist/opencode.mjs",
@@ -44,6 +47,7 @@
     "prepublishOnly": "vp run build"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "^2.7.0",
     "@anthropic-ai/claude-agent-sdk": "^0.3.309",
     "@openai/codex-sdk": "^0.169.0",
     "@opencode-ai/sdk": "^1.19.5",
@@ -53,11 +57,15 @@
     "zod": "^4.6.7"
   },
   "peerDependencies": {
+    "@agentclientprotocol/sdk": "^2.7.0",
     "@anthropic-ai/claude-agent-sdk": ">=0.3.309 <0.4",
     "@openai/codex-sdk": ">=0.169.0 <0.170",
     "@opencode-ai/sdk": "^1.19.5"
   },
   "peerDependenciesMeta": {
+    "@agentclientprotocol/sdk": {
+      "optional": true
+    },
     "@anthropic-ai/claude-agent-sdk": {
       "optional": true
     },

@@ -33,7 +33,7 @@ type ValidationResult<T> =
     };
 
 /**
- * A call to an agent, made only of what Claude, Codex and opencode all support. Settings of
+ * A call to an agent, made only of what Claude, Codex, opencode and ACP agents all support. Settings of
  * a single runtime belong to its factory (claudeRuntime({ allowedTools }), ...), which keeps
  * a node free to move between runtimes.
  */
@@ -60,7 +60,7 @@ export interface AgentRequest<T = undefined> {
 
 /** What a call cost, as far as the runtime reports it. */
 export interface Usage {
-  /** Absent when the runtime reports tokens only (codex). */
+  /** Absent when the runtime reports tokens only (codex, or an ACP agent that sends no cost). */
   costUsd?: number;
   models?: Record<string, Tokens>;
 }

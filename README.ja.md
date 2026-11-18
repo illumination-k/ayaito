@@ -3,10 +3,11 @@
 [English](README.md)
 
 エージェントのワークフローを型付きのグラフとして組む小さなエンジン。エージェントは Claude
-（[Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)）・Codex・opencode のどれでも動かせる。
+（[Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)）・Codex・opencode のほか、
+[Agent Client Protocol](https://agentclientprotocol.com)（ACP）を話すエージェントで動かせる。
 
 ```bash
-npm install ayaito zod @anthropic-ai/claude-agent-sdk # か @openai/codex-sdk・@opencode-ai/sdk
+npm install ayaito zod @anthropic-ai/claude-agent-sdk # か @openai/codex-sdk・@opencode-ai/sdk・@agentclientprotocol/sdk
 ```
 
 ```ts
@@ -29,17 +30,17 @@ const result = await run(flow, input, { runId, store: new FsStore(".runs") });
 if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`);
 ```
 
-| 部品                         | 役割                                                                                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）          |
-| `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`） |
-| `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                         |
-| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）                                |
-| `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                     |
-| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                             |
-| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー）の保存                                                |
-| `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                        |
-| `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                               |
+| 部品                         | 役割                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                        |
+| `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`） |
+| `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                       |
+| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）                                                              |
+| `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                   |
+| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                                                           |
+| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー）の保存                                                                              |
+| `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                                                      |
+| `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                                                             |
 
 - 同じ run ID で走らせ直すと、`checkpoint` の付いたノードは保存した出力を返す。前のノードが
   走り直して入力が変わったノードは走り直す。特定のノードからやり直すときは `store.invalidate`
@@ -53,7 +54,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 エージェントのノードの指定は実行環境をまたいで同じ意味になる: `prompt`・`output`・`system`・`model`・`cwd`・
 `access`（`"read-only"` か `"write"`。無人で動くので承認は待たない）。一つの実行環境にしかない設定は、実行環境を作るときに渡す
 （Claude の `allowedTools`・`permissionMode`・`maxBudgetUsd`・プロセス内の `mcpTools`、Codex のスレッドの設定、
-opencode のサーバー）。`access` を指定すると、実行環境に渡したツールと権限を置き換える。
+opencode のサーバー、ACP のエージェントのコマンド）。`access` を指定すると、実行環境に渡したツールと権限を置き換える。
 
 `output` は JSON Schema を出せる [Standard Schema](https://standardschema.dev/) のスキーマ（zod 4.2+）。
 JSON Schema にしてエージェントに渡し、答えをそれで検証する。
@@ -66,6 +67,11 @@ JSON Schema にしてエージェントに渡し、答えをそれで検証す�
   後ろのノードで通らなかったものを記録できる。フローの外では `refine` で同じことをする
 - Codex ではオブジェクトをすべて strict にする（`z.strictObject`）。タプルは使わない（Claude の CLI は draft-07、
   API は 2020-12 で検証し、どちらかで落ちる）
+- `acpRuntime({ command, args })` は ACP のエージェントを子プロセスとして起動し、呼び出しの間で共有する。`access` は
+  エージェントの許可の求めへの答えになる（read-only は読み取りと検索だけ許す）ので、許可を求めないモードで起動した
+  エージェントは止められない。ACP に構造化出力はないので、スキーマはプロンプトに入れ、答えの文章から JSON を取り出す。
+  `model` は、エージェントにモデルの設定があればそれを切り替える。`meta` はセッションの `_meta` としてエージェントに渡す
+  （そのエージェントにしかない設定用）
 - `defineRuntime` はアダプタから実行環境を作る（ほかのエージェントやテスト用）。呼び出しには呼んだノードの名前
   （`node`）が入るので、ノードごとに呼び出しを見せたり記録したりする実行環境で使える
 
