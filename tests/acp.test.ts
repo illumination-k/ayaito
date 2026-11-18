@@ -9,7 +9,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
-import { acpRuntime } from "../src/acp.ts";
+import { acpRuntime, type AcpRuntimeOptions } from "../src/acp.ts";
 import { OutputError } from "../src/runtime.ts";
 
 const OPTIONS: PermissionOption[] = [
@@ -30,7 +30,7 @@ interface Turn {
 }
 
 /** An ACP agent in this process that plays turns and records what it was sent. */
-function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}) {
+function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}, options: Partial<AcpRuntimeOptions> = {}) {
   const seen = { requests: [] as [method: string, params: unknown][], outcomes: [] as unknown[] };
   let cancel = () => {};
   const cancelled = new Promise<void>((resolve) => (cancel = resolve));
@@ -109,7 +109,10 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}) {
       }
       return { stopReason: "end_turn" as const, usage: turn.usage };
     });
-  const runtime = acpRuntime({ command: "fake" }, (client) => ({ connection: client.connect(app), close() {} }));
+  const runtime = acpRuntime({ command: "fake", ...options }, (client) => ({
+    connection: client.connect(app),
+    close() {},
+  }));
   const sent = (method: string) => seen.requests.filter(([m]) => m === method).map(([, params]) => params);
   return { runtime, seen, sent };
 }
@@ -180,12 +183,15 @@ describe("acpRuntime", () => {
   });
 
   it("resumes a session of an earlier process, or fails when the agent cannot", async () => {
-    const able = fakeAgent([{ says: ["back"] }], { sessionCapabilities: { resume: {} } });
+    const meta = { claudeCode: { options: { maxTurns: 5 } } };
+    const able = fakeAgent([{ says: ["back"] }, { says: ["new"] }], { sessionCapabilities: { resume: {} } }, { meta });
     await expect(able.runtime.run({ prompt: "", sessionId: "old", cwd: "/x" })).resolves.toMatchObject({
       text: "back",
       sessionId: "old",
     });
-    expect(able.sent("session/resume")).toEqual([{ sessionId: "old", cwd: "/x", mcpServers: [] }]);
+    expect(able.sent("session/resume")).toEqual([{ sessionId: "old", cwd: "/x", mcpServers: [], _meta: meta }]);
+    await able.runtime.run({ prompt: "", cwd: "/x" });
+    expect(able.sent("session/new")).toEqual([{ cwd: "/x", mcpServers: [], _meta: meta }]);
 
     const unable = fakeAgent([]);
     await expect(unable.runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("cannot resume session old");

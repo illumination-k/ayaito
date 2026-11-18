@@ -29,6 +29,11 @@ export interface AcpRuntimeOptions {
   env?: Record<string, string>;
   /** MCP servers every session gets. */
   mcpServers?: McpServer[];
+  /**
+   * Sent as `_meta` when a session is made or resumed, for settings only this agent
+   * understands (the Claude adapter reads `claudeCode.options`, for one).
+   */
+  meta?: Record<string, unknown>;
 }
 
 /** Opens the connection to the agent. Replaced in tests by one to an agent in this process. */
@@ -60,6 +65,7 @@ interface Session {
 export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) => start(app, options)): AgentRuntime {
   const sessions = new Map<string, Session>();
   const mcpServers = options.mcpServers ?? [];
+  const meta = options.meta && { _meta: options.meta };
 
   const app = client({ name: "ayaito" })
     .onNotification(methods.client.session.update, ({ params: { sessionId, update } }) => {
@@ -130,7 +136,7 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
         session = { access, text: "", afterTool: false };
         let configOptions: NewSessionResponse["configOptions"];
         if (request.sessionId === undefined) {
-          const params: NewSessionRequest = { cwd, mcpServers, ...system };
+          const params: NewSessionRequest = { cwd, mcpServers, ...system, ...meta };
           const response = await agent.request(methods.agent.session.new, params);
           sessionId = response.sessionId;
           configOptions = response.configOptions;
@@ -142,7 +148,7 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
           if (!resume && !capabilities.loadSession) {
             throw new Error(`acp: the agent cannot resume session ${sessionId}`);
           }
-          const params: LoadSessionRequest = { sessionId, cwd, mcpServers, ...system };
+          const params: LoadSessionRequest = { sessionId, cwd, mcpServers, ...system, ...meta };
           // Tracked before the request, to count the usage that comes with the session.
           sessions.set(sessionId, session);
           try {

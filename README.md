@@ -72,6 +72,7 @@ server, the command of an ACP agent. A request's `access` replaces the tools and
   becomes the answer to the agent's permission requests (read-only allows reading and searching only), so an
   agent started in a mode that does not ask is not held back. ACP has no structured output: the schema goes
   into the prompt and the answer is parsed from the text. `model` sets the agent's model option, if it has one.
+  `meta` goes to the agent as the `_meta` of its sessions, for settings only that agent understands.
 - `defineRuntime` makes a runtime from an adapter, for another agent or a test. A request carries the name of
   the node making it (`node`), for a runtime that shows or records its calls per node.
 
