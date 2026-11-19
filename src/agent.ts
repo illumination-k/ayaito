@@ -5,6 +5,7 @@ import {
   type AgentRequest,
   type AgentResult,
   type AgentRuntime,
+  brief,
   InterruptedError,
   OutputError,
   type OutputSchema,
@@ -67,8 +68,9 @@ export function refineNode<I, O, T>(
   return {
     name,
     shape: { kind: "agent" },
-    run: async (input, ctx) =>
-      refine({
+    run: async (input, ctx) => {
+      const { steer } = ctx;
+      return refine({
         runtime: metered(runtime, name, ctx),
         request: { ...request, cwd: request.cwd ?? ctx.cwd, prompt: prompt(input), node: name, signal: ctx.signal },
         check: async (result, attempt) => {
@@ -79,11 +81,17 @@ export function refineNode<I, O, T>(
         maxAttempts,
         wrapUp: ctx.wrapUp,
         onWrapUp: () => ctx.emit({ type: "wrapUp", node: name }),
-      }),
+        steer: steer && ((listener) => steer.listen(name, listener)),
+        onSteer: (message) => ctx.emit({ type: "steer", node: name, message }),
+      });
+    },
   };
 }
 
-/** Records the usage of every call (an interrupted one too), and a schema miss as a retry. */
+// An activity keeps this much of a message: events are for following the work, not for keeping it.
+const SHOWN = 1000;
+
+/** Records the usage of every call (an interrupted one too), a schema miss as a retry, and what the agent does. */
 function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntime {
   let calls = 0;
   const usage = ({ costUsd, models }: Usage) => {
@@ -95,7 +103,11 @@ function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntim
     async run<T>(request: AgentRequest<T>) {
       calls++;
       try {
-        const result = await runtime.run(request);
+        const result = await runtime.run({
+          ...request,
+          onActivity: ({ tool, text }) =>
+            ctx.emit({ type: "activity", node, ...(tool !== undefined && { tool }), text: brief(text, SHOWN) }),
+        });
         usage(result);
         return result;
       } catch (error) {

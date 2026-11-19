@@ -1,5 +1,6 @@
 import { type Budget, limitSpend, spentIn } from "./limits.ts";
 import { toGraph } from "./graph.ts";
+import type { Steer } from "./steer.ts";
 import { type Context, type Node, type RunEvent, Stop, type Store, type Tokens } from "./node.ts";
 
 /** "stopped" when a node threw Stop: the run ended early, as a success. */
@@ -13,6 +14,7 @@ export type RunResult<O> = { costUsd: number; events: RunEvent[] } & (
  * nodes behind a checkpoint edge return their saved output. Aborting signal cancels the run.
  * A budget aborts the run with BudgetError once its agents spend more, counting what earlier
  * attempts of the run spent. cwd is the directory agent nodes without one of their own run in.
+ * steer (see steering) carries messages to agents while they work.
  */
 export async function run<I, O>(
   node: Node<I, O>,
@@ -24,6 +26,7 @@ export async function run<I, O>(
     signal?: AbortSignal;
     budget?: Budget;
     cwd?: string;
+    steer?: Steer;
   },
 ): Promise<RunResult<O>> {
   const events: RunEvent[] = [];
@@ -31,6 +34,7 @@ export async function run<I, O>(
   const base: Context = {
     runId: opts.runId,
     cwd: opts.cwd,
+    steer: opts.steer,
     store: opts.store,
     signal: opts.signal ?? new AbortController().signal,
     history: async () => {

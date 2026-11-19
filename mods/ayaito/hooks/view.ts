@@ -19,13 +19,20 @@ export type Graph = {
 
 /** A line of ayaito's events.jsonl. */
 export type RunEvent = {
-  type: "start" | "end" | "skip" | "retry" | "error" | "stop" | "wrapUp" | "usage";
+  type: "start" | "end" | "skip" | "retry" | "error" | "stop" | "wrapUp" | "usage" | "activity" | "steer";
   node: string;
   ms?: number;
   attempt?: number;
   error?: string;
   usd?: number;
+  tool?: string;
+  text?: string;
+  message?: string;
 };
+
+/** As much of an activity as a line of the pane can show. */
+const LINE = 200;
+const line = (text: string) => text.replaceAll(/\s+/g, " ").trim().slice(0, LINE);
 
 type NodeState = {
   status: Status;
@@ -36,6 +43,8 @@ type NodeState = {
   usd: number;
   attempt?: number;
   error?: string;
+  /** The last thing its agent said or did, or was sent. */
+  activity?: string;
 };
 
 /** What the events say about each node, by its name. */
@@ -59,6 +68,7 @@ export function fold(events: RunEvent[]): Map<string, NodeState> {
         state.status = "running";
         state.isSkipped = false;
         state.error = undefined;
+        state.activity = undefined;
         break;
       case "skip":
         state.isSkipped = true;
@@ -76,6 +86,12 @@ export function fold(events: RunEvent[]): Map<string, NodeState> {
         break;
       case "usage":
         state.usd += e.usd ?? 0;
+        break;
+      case "activity":
+        state.activity = line(e.tool === undefined ? (e.text ?? "") : `${e.tool} ${e.text ?? ""}`);
+        break;
+      case "steer":
+        state.activity = line(`← ${e.message ?? ""}`);
         break;
       case "stop":
         // The flows around the node that stopped record nothing more: the run is over.
@@ -156,6 +172,7 @@ export function view(dir: string, runId: string, graph: Graph, events: RunEvent[
         status,
         detail,
         ...(state?.error !== undefined && status === "failed" && { error: state.error }),
+        ...(state?.activity !== undefined && status === "running" && { activity: state.activity }),
         ...(parent !== undefined && { parent }),
         isStep: isStep && !untaken,
       });

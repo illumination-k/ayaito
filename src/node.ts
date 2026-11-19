@@ -1,3 +1,5 @@
+import type { Steer } from "./steer.ts";
+
 /** A step of work: what a node does with its input. */
 export type Fn<I, O> = (input: I, ctx: Context) => Promise<O>;
 
@@ -38,6 +40,10 @@ export type RunEvent =
   | { type: "stop"; node: string; at: string; reason: string }
   /** Time was up (timeout's wrapUp): the agent's turn was interrupted and it was asked to answer. */
   | { type: "wrapUp"; node: string; at: string }
+  /** What an agent said, or with tool, a tool it called and the input in short. */
+  | { type: "activity"; node: string; at: string; tool?: string; text: string }
+  /** A message sent to the agent while it worked (run's steer) reached its session. */
+  | { type: "steer"; node: string; at: string; message: string }
   /** usd is absent when the runtime reports tokens only (codex). */
   | { type: "usage"; node: string; at: string; usd?: number; models: Record<string, Tokens> };
 
@@ -71,6 +77,8 @@ export interface Context {
    * turn and asks the same session for its answer with prompt, instead of being cut off.
    */
   readonly wrapUp?: { readonly signal: AbortSignal; readonly prompt: string };
+  /** run's steer: agent nodes listen to it for messages sent to them while they work. */
+  readonly steer?: Steer;
 }
 
 /**

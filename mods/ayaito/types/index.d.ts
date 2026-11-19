@@ -15,6 +15,8 @@ export type Row = {
   /** What wraps the node and what the run says about it, shown dim. */
   detail: string;
   error?: string;
+  /** While an agent runs: the last thing it said or did, or was sent (after ←). */
+  activity?: string;
 };
 
 export type View = {

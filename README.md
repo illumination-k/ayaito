@@ -41,7 +41,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed)                    |
 | `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                  |
 | `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                           |
-| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors) under `<dir>/<runId>/`                                                   |
+| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                   |
 | `Stop`                         | Thrown by a node that finds nothing to do: the run ends early as a success (`status: "stopped"`)                                                         |
 | `exec`                         | Runs a command and returns its exit code as the result, for gates such as tests                                                                          |
 
@@ -58,6 +58,12 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   It has `wrapUp.ms` more for that, then the node times out as usual. An agent that starts after time is up
   is asked to answer at once, and `refineNode` makes no attempt after that answer. Runtimes report an
   interrupted call as `InterruptedError`, with its session and usage.
+- What an agent says and the tools it calls become `activity` events as it works, so `events.jsonl` (or `run`'s
+  `log`) shows what each agent is doing. Messages are cut to 1000 characters and tool inputs to 300.
+- `run(..., { steer })` lets someone reach an agent at work: with `const steer = steering()`,
+  `steer.send(node, message)` interrupts the turn of that node's agent and gives the message to the same session,
+  which then goes on with its task (a `steer` event). It is no new attempt. `send` returns `false` when no agent
+  of the node is working. Only agent nodes can be reached; the tool call in progress is cut off.
 - `branch`'s cases must cover every key the function can return, checked by the type. Annotate the function's
   input, as with `fnNode`.
 - `worktree(node, { commit })` gives the node the worktree as `ctx.cwd`, which agent nodes without a `cwd` use
@@ -133,6 +139,7 @@ runs a `.ts` file by stripping its types (22.18 or later).
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run
 npx ayaito graph flow.ts > graph.json
+npx ayaito steer weekly select-topic "Pick something seasonal."   # to the agent of a node that is running
 ```
 
 ### In Claude Code

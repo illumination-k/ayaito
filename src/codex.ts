@@ -1,6 +1,21 @@
-import { Codex, type CodexOptions, type SandboxMode, type ThreadOptions } from "@openai/codex-sdk";
+import {
+  Codex,
+  type CodexOptions,
+  type SandboxMode,
+  type ThreadItem,
+  type ThreadOptions,
+  type Usage,
+} from "@openai/codex-sdk";
 
-import { type Access, type AgentRuntime, defineRuntime, InterruptedError, OutputError } from "./runtime.ts";
+import {
+  type Access,
+  type Activity,
+  type AgentRuntime,
+  brief,
+  defineRuntime,
+  InterruptedError,
+  OutputError,
+} from "./runtime.ts";
 
 export type CodexRuntimeOptions = CodexOptions & {
   thread?: Omit<ThreadOptions, "approvalPolicy" | "model" | "sandboxMode" | "workingDirectory">;
@@ -31,9 +46,22 @@ export function codexRuntime({ thread, ...base }: CodexRuntimeOptions = {}): Age
         workingDirectory: request.cwd,
       };
       const t = request.sessionId ? codex.resumeThread(request.sessionId, options) : codex.startThread(options);
-      let turn: Awaited<ReturnType<typeof t.run>>;
+      // What Thread.run does, with the items reported as they come.
+      const turn: { finalResponse: string; usage: Usage | null } = { finalResponse: "", usage: null };
       try {
-        turn = await t.run(request.prompt, { outputSchema: request.outputSchema, signal: request.signal });
+        const { events } = await t.runStreamed(request.prompt, {
+          outputSchema: request.outputSchema,
+          signal: request.signal,
+        });
+        for await (const event of events) {
+          if (event.type === "turn.failed") throw new Error(event.error.message);
+          if (event.type === "turn.completed") turn.usage = event.usage;
+          if (event.type !== "item.started" && event.type !== "item.completed") continue;
+          const isDone = event.type === "item.completed";
+          if (isDone && event.item.type === "agent_message") turn.finalResponse = event.item.text;
+          const activity = activityOf(event.item, isDone);
+          if (activity) request.onActivity?.(activity);
+        }
       } catch (error) {
         // The thread keeps the turns so far once it has started.
         if (request.signal?.aborted && t.id) throw new InterruptedError(t.id, request.signal.reason);
@@ -63,4 +91,22 @@ export function codexRuntime({ thread, ...base }: CodexRuntimeOptions = {}): Age
       return { text: turn.finalResponse, structured, sessionId, models };
     },
   });
+}
+
+/** Tools are reported when they start, and what is whole only at its end (a message, a patch, a search) then. */
+function activityOf(item: ThreadItem, isDone: boolean): Activity | undefined {
+  if (!isDone) {
+    if (item.type === "command_execution") return { tool: "command", text: brief(item.command) };
+    if (item.type === "mcp_tool_call") return { tool: `${item.server}/${item.tool}`, text: brief(item.arguments) };
+    return undefined;
+  }
+  if (item.type === "agent_message") return item.text.trim() === "" ? undefined : { text: item.text };
+  if (item.type === "file_change") {
+    return {
+      tool: "file_change",
+      text: brief(item.changes.map((change) => `${change.kind} ${change.path}`).join(", ")),
+    };
+  }
+  if (item.type === "web_search") return { tool: "web_search", text: brief(item.query) };
+  return undefined;
 }

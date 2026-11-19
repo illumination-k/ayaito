@@ -125,3 +125,27 @@ test("a folder with no runs says so", async ($, on) => {
   expect((await ui.find({ type: "Text" }))?.text).toBe("No runs in out/runs yet.");
   await ui.unmount();
 });
+
+const WORKING = [
+  { type: "start", node: "weekly" },
+  { type: "start", node: "select topic" },
+  { type: "activity", node: "select topic", text: "I will look\nat the site." },
+  { type: "activity", node: "select topic", tool: "Read", text: '{"file_path":"a.md"}' },
+];
+
+test("an agent that is running shows the last thing it said or did", async ($, on) => {
+  disk(on, WORKING);
+  await $.command.run(typed(""));
+  const ui = await $.ui.mount({ ...PANE, surface: "terminal" });
+
+  expect((await ui.find({ type: "Text", text: /Read/ }))?.text).toBe('Read {"file_path":"a.md"}');
+  expect(await ui.find({ type: "Text", text: /I will look/ })).toBeUndefined();
+});
+
+test("an agent that was sent a message shows it", async ($, on) => {
+  disk(on, [...WORKING, { type: "steer", node: "select topic", message: "Pick something seasonal." }]);
+  await $.command.run(typed(""));
+  const ui = await $.ui.mount({ ...PANE, surface: "terminal" });
+
+  expect((await ui.find({ type: "Text", text: /seasonal/ }))?.text).toBe("← Pick something seasonal.");
+});

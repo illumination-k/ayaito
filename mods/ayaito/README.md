@@ -20,6 +20,9 @@ another folder, and `/ayaito <dir> <runId>` stays on one run. The pane follows t
 | `↷`  | skipped: a checkpoint had its output, or a branch not taken |
 | `■`  | the run stopped here (`Stop`)                               |
 
+Under an agent that is running, a dim line has the last thing it said or the tool it called, or after `←` a
+message that was sent to it.
+
 Nodes are matched to events by name, so two nodes with the same name show the same state. A run made with an
 ayaito that saves no `graph.json` (0.2.0 and earlier) cannot be shown.
 
@@ -27,7 +30,7 @@ Tests: `claude plugin test mods/ayaito`.
 
 ## Flows that Claude writes
 
-The mod gives Claude two tools. With `mcp__ayaito__run`, Claude writes a flow as a TypeScript module and starts
+The mod gives Claude three tools. With `mcp__ayaito__run`, Claude writes a flow as a TypeScript module and starts
 it in the background, as it would a workflow of subagents: the call returns at once, the pane shows the run on
 its graph, and when the run ends its result reaches Claude as a message, which starts a turn. Ask for it in
 words: "run an ayaito flow that plans the fixes, fixes each in its own worktree and runs the tests".
@@ -38,6 +41,9 @@ words: "run an ayaito flow that plans the fixes, fixes each in its own worktree 
 - `mcp__ayaito__stop` stops a run. A run is a process of its own (`ayaito run`, started with `nohup`), so it
   goes on when the mod reloads or the session ends; one that outlives the session is not reported to a later
   one.
+- `mcp__ayaito__steer` sends a message to an agent of a run while it works: the agent's turn is interrupted, it
+  reads the message and goes on. Claude can follow what the agents do in the run's `events.jsonl` and correct one
+  that goes wrong, without stopping the run. Ask for it in words: "tell the fix agent to leave the tests alone".
 - The project needs `ayaito` installed (`node_modules/.bin/ayaito`), `zod`, and the SDK of the runtime the
   flow's agents use. The flow is run by Node, which strips its types (Node 22.18 or later) and does not check
   them. Starting a run needs `sh`, so not Windows.

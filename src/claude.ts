@@ -7,7 +7,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { Tokens } from "./node.ts";
-import { type Access, type AgentRuntime, defineRuntime, InterruptedError, type Usage } from "./runtime.ts";
+import { type Access, type AgentRuntime, brief, defineRuntime, InterruptedError, type Usage } from "./runtime.ts";
 
 /** The SDK's query, or a stand-in for tests. interrupt, when there is one, ends the turn and keeps the session. */
 export type Query = (params: {
@@ -78,6 +78,12 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
         for await (const message of turn) {
           sessionId ??= message.session_id;
           if (message.type === "result") result = message;
+          else if (message.type === "assistant" && request.onActivity) {
+            for (const block of message.message.content) {
+              if (block.type === "text" && block.text.trim() !== "") request.onActivity({ text: block.text });
+              else if (block.type === "tool_use") request.onActivity({ tool: block.name, text: brief(block.input) });
+            }
+          }
         }
       } catch (error) {
         if (!request.signal?.aborted) throw error;

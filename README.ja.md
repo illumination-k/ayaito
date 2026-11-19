@@ -41,7 +41,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                    |
 | `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                      |
 | `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                       |
-| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー）の保存                                                                              |
+| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー・エージェントの動き）の保存                                                          |
 | `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                                                      |
 | `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                                                             |
 
@@ -57,6 +57,12 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   同じセッションでそれまでの結果から答えるよう頼む（`wrapUp` イベント）。その猶予が `wrapUp.ms` で、過ぎれば通常どおり
   タイムアウトする。時間切れの後に始まるエージェントにはすぐ答えるよう頼み、`refineNode` はその答えの後に試行しない。
   中断した呼び出しは実行環境が `InterruptedError`（セッションと使用量つき）として返す
+- エージェントの発言とツール呼び出しは、作業中に `activity` イベントになる。`events.jsonl`（または `run` の `log`）で
+  各エージェントが何をしているか分かる。発言は 1000 文字、ツールの入力は 300 文字で切る
+- `run(..., { steer })` で作業中のエージェントに介入できる。`const steer = steering()` として
+  `steer.send(node, message)` を呼ぶと、そのノードのエージェントのターンを中断し、同じセッションにメッセージを渡す。
+  エージェントはそれを踏まえて作業を続ける（`steer` イベント）。試行回数には数えない。そのノードのエージェントが
+  作業中でなければ `send` は `false` を返す。介入できるのはエージェントのノードだけで、実行中のツール呼び出しは打ち切られる
 - `branch` の cases は関数が返しうるキーをすべて持つ必要があり、型で検査する。関数の入力には `fnNode` と同じく型を書く
 - `worktree(node, { commit })` はノードに worktree を `ctx.cwd` として渡し、`cwd` のないエージェントのノードはそこで動く
   （`run(..., { cwd })` で実行全体に設定できる）。出力は `{ output, branch, path, commit }`。ブランチは既定で
@@ -130,6 +136,7 @@ const { nodes, edges } = toGraph(flow);
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
 npx ayaito graph flow.ts > graph.json
+npx ayaito steer weekly select-topic "季節の話題にして"   # 実行中のノードのエージェントへ
 ```
 
 ### Claude Code で見る
