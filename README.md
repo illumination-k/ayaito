@@ -64,6 +64,8 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   `steer.send(node, message)` interrupts the turn of that node's agent and gives the message to the same session,
   which then goes on with its task (a `steer` event). It is no new attempt. `send` returns `false` when no agent
   of the node is working. Only agent nodes can be reached; the tool call in progress is cut off.
+  `steer.stop(node)` ends an agent's work without failing the node: it is interrupted and asked for its answer
+  from what it has done so far (a `wrapUp` event with `stopped`), and `refineNode` makes no attempt after it.
 - `branch`'s cases must cover every key the function can return, checked by the type. Annotate the function's
   input, as with `fnNode`.
 - `worktree(node, { commit })` gives the node the worktree as `ctx.cwd`, which agent nodes without a `cwd` use
@@ -140,6 +142,7 @@ runs a `.ts` file by stripping its types (22.18 or later).
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run
 npx ayaito graph flow.ts > graph.json
 npx ayaito steer weekly select-topic "Pick something seasonal."   # to the agent of a node that is running
+npx ayaito stop weekly select-topic   # that agent answers now and the run goes on; without a node, stops the run
 ```
 
 ### In Claude Code

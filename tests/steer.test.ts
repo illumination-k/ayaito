@@ -18,7 +18,7 @@ import {
   steering,
   timeout,
 } from "../src/index.ts";
-import { steerPrompt } from "../src/refine.ts";
+import { STOP_PROMPT, steerPrompt } from "../src/refine.ts";
 
 const tmpStore = async () => new FsStore(await mkdtemp(join(tmpdir(), "ayaito-")));
 const output = z.object({ found: z.number() });
@@ -147,6 +147,32 @@ describe("steering", () => {
     expect(events.filter((e) => e.type === "wrapUp" || e.type === "steer").map((e) => e.type)).toEqual([
       "wrapUp",
       "steer",
+    ]);
+  });
+
+  it("stops an agent at work, which answers from what it has done, and the flow goes on", async () => {
+    const { runtime, seen, started } = scripted([untilAborted, async () => answer(2)]);
+    const research = refineNode(
+      "research",
+      { prompt: () => "count", output, maxAttempts: 3, check: () => ({ ok: false, feedback: "more" }) },
+      runtime,
+    );
+    const steer = steering();
+    expect(steer.stop("research")).toBe(false);
+    const working = started();
+    const running = run(research, undefined, { runId: "r", store: await tmpStore(), steer });
+    await working;
+    expect(steer.stop("research")).toBe(true);
+
+    const { output: result, events } = await running;
+    // No attempt follows the answer of an agent that was stopped.
+    expect(result).toMatchObject({ ok: false, attempts: 1 });
+    expect(seen).toEqual([
+      { prompt: "count", sessionId: undefined },
+      { prompt: STOP_PROMPT, sessionId: "s1" },
+    ]);
+    expect(events.filter((e) => e.type === "wrapUp")).toEqual([
+      expect.objectContaining({ node: "research", stopped: true }),
     ]);
   });
 

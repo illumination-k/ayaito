@@ -102,4 +102,44 @@ describe("ayaito", () => {
       stderr: expect.stringContaining("is not running"),
     });
   });
+
+  it("stops the agent of a node, or the run", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ayaito-"));
+    const file = join(dir, "flow.ts");
+    // An agent that never ends by itself: interrupted, it answers with what it is asked then.
+    await writeFile(
+      file,
+      `import { agentNode, defineRuntime, Flow, InterruptedError } from ${JSON.stringify(resolve("src/index.ts"))};
+       const output = { "~standard": { version: 1, vendor: "test", validate: (value) => ({ value }), jsonSchema: { output: () => ({}) } } };
+       const runtime = defineRuntime({
+         name: "fake",
+         run: ({ prompt, sessionId, signal }) =>
+           sessionId
+             ? Promise.resolve({ text: "", sessionId, structured: prompt })
+             : new Promise((_, reject) => signal.addEventListener("abort", () => reject(new InterruptedError("s1", signal.reason)))),
+       });
+       export default Flow.start("f").then(agentNode("research", { prompt: () => "count", output }, runtime)).build();`,
+    );
+    const store = ["--store", dir];
+    const started = async (runId: string) => {
+      const events = () => readFile(join(dir, runId, "events.jsonl"), "utf8").catch(() => "");
+      while (!(await events()).includes('"start","node":"research"')) await new Promise((r) => setTimeout(r, 20));
+    };
+
+    const one = cli("run", file, "--run-id", "a", ...store);
+    await started("a");
+    expect((await cli("stop", "a", "research", ...store)).stdout).toContain("to stop and answer");
+    expect(JSON.parse((await one).stdout)).toMatchObject({
+      status: "done",
+      output: expect.stringContaining("Stop working now"),
+    });
+    expect(await cli("stop", "a", ...store)).toMatchObject({ code: 1, stderr: expect.stringContaining("has ended") });
+
+    const whole = cli("run", file, "--run-id", "b", ...store);
+    await started("b");
+    expect((await cli("stop", "b", ...store)).stdout).toContain("Told run b to stop");
+    const failed = (await whole) as { code: number; stdout: string };
+    expect(failed.code).toBe(1);
+    expect(JSON.parse(failed.stdout)).toMatchObject({ status: "failed", error: expect.stringContaining("stopped") });
+  });
 });

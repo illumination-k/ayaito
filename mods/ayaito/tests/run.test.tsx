@@ -32,6 +32,10 @@ const project = (on: On, files: Record<string, string>) => {
       world.started.push(e.argv.slice(3));
       return done(0, "4242\n");
     }
+    if (e.argv[1] === "stop") {
+      world.steered.push(e.argv);
+      return done(0, "Told.\n");
+    }
     if (e.argv[1] === "steer") {
       world.steered.push(e.argv);
       return e.argv.at(-2) === "plan" ? done(0, "Sent.\n") : { value: { ...done(1).value, stderr: "not running" } };
@@ -136,4 +140,13 @@ test("the steer tool passes the message to the run through the CLI and says why 
   expect(refused.isError).toBe(true);
   expect(refused.text).toMatch(/not running/);
   expect((await $.tool.call({ tool: "mcp__ayaito__steer", runId: "r1", node: "plan" })).text).toMatch(/Pass runId/);
+});
+
+test("the stop tool with a node stops only its agent, through the CLI", async ($, on) => {
+  const world = project(on, { ...INSTALLED });
+  await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+
+  expect((await $.tool.call({ tool: "mcp__ayaito__stop", runId: "r1", node: "plan" })).result).toBe("Told.");
+  expect(world.steered).toEqual([["node_modules/.bin/ayaito", "stop", "--store", ".runs", "--", "r1", "plan"]]);
+  expect(world.killed).toEqual([]);
 });

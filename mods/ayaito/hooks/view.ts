@@ -28,6 +28,7 @@ export type RunEvent = {
   tool?: string;
   text?: string;
   message?: string;
+  stopped?: boolean;
 };
 
 /** As much of an activity as a line of the pane can show. */
@@ -89,6 +90,9 @@ export function fold(events: RunEvent[]): Map<string, NodeState> {
         break;
       case "activity":
         state.activity = line(e.tool === undefined ? (e.text ?? "") : `${e.tool} ${e.text ?? ""}`);
+        break;
+      case "wrapUp":
+        if (e.stopped) state.activity = "← stop";
         break;
       case "steer":
         state.activity = line(`← ${e.message ?? ""}`);

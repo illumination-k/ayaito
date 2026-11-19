@@ -62,7 +62,9 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 - `run(..., { steer })` で作業中のエージェントに介入できる。`const steer = steering()` として
   `steer.send(node, message)` を呼ぶと、そのノードのエージェントのターンを中断し、同じセッションにメッセージを渡す。
   エージェントはそれを踏まえて作業を続ける（`steer` イベント）。試行回数には数えない。そのノードのエージェントが
-  作業中でなければ `send` は `false` を返す。介入できるのはエージェントのノードだけで、実行中のツール呼び出しは打ち切られる
+  作業中でなければ `send` は `false` を返す。介入できるのはエージェントのノードだけで、実行中のツール呼び出しは打ち切られる。
+  `steer.stop(node)` はノードを失敗させずにエージェントの作業を終わらせる。中断して、それまでの結果から答えるよう頼み
+  （`stopped` つきの `wrapUp` イベント）、`refineNode` はその後に試行しない
 - `branch` の cases は関数が返しうるキーをすべて持つ必要があり、型で検査する。関数の入力には `fnNode` と同じく型を書く
 - `worktree(node, { commit })` はノードに worktree を `ctx.cwd` として渡し、`cwd` のないエージェントのノードはそこで動く
   （`run(..., { cwd })` で実行全体に設定できる）。出力は `{ output, branch, path, commit }`。ブランチは既定で
@@ -137,6 +139,7 @@ const { nodes, edges } = toGraph(flow);
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
 npx ayaito graph flow.ts > graph.json
 npx ayaito steer weekly select-topic "季節の話題にして"   # 実行中のノードのエージェントへ
+npx ayaito stop weekly select-topic   # そのエージェントはすぐ答え、実行は続く。ノードなしなら実行を止める
 ```
 
 ### Claude Code で見る

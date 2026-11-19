@@ -21,7 +21,7 @@ another folder, and `/ayaito <dir> <runId>` stays on one run. The pane follows t
 | `■`  | the run stopped here (`Stop`)                               |
 
 Under an agent that is running, a dim line has the last thing it said or the tool it called, or after `←` a
-message that was sent to it.
+message that was sent to it (`← stop` when it was told to stop).
 
 Nodes are matched to events by name, so two nodes with the same name show the same state. A run made with an
 ayaito that saves no `graph.json` (0.2.0 and earlier) cannot be shown.
@@ -38,7 +38,8 @@ words: "run an ayaito flow that plans the fixes, fixes each in its own worktree 
 - The flow, its input, log and result are saved under `<dir>/<runId>/` (`flow.ts`, `input.json`, `run.log`,
   `result.json`), beside the run's events and checkpoints. Passing a `runId` again resumes that run from its
   checkpoints, with the saved flow or a new one.
-- `mcp__ayaito__stop` stops a run. A run is a process of its own (`ayaito run`, started with `nohup`), so it
+- `mcp__ayaito__stop` stops a run, or with a `node` only that node's agent, which then answers from what it has
+  done so far while the run goes on. A run is a process of its own (`ayaito run`, started with `nohup`), so it
   goes on when the mod reloads or the session ends; one that outlives the session is not reported to a later
   one.
 - `mcp__ayaito__steer` sends a message to an agent of a run while it works: the agent's turn is interrupted, it

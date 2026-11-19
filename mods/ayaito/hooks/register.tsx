@@ -116,7 +116,7 @@ export const register: Register = (on) => {
     return answer;
   });
 
-  on("tool.run", { tool: STOP }, ($, e) => stop($, (e as Record<string, unknown>).runId));
+  on("tool.run", { tool: STOP }, async ($, e) => stop($, (await read($, source)).dir, e as Record<string, unknown>));
 
   on("tool.run", { tool: STEER }, async ($, e) => steer($, (await read($, source)).dir, e as Record<string, unknown>));
 

@@ -34,6 +34,6 @@ export {
   type RawResult,
   type Usage,
 } from "./runtime.ts";
-export { steering, type Steer } from "./steer.ts";
+export { steering, type Sent, type Steer } from "./steer.ts";
 export { FsStore } from "./store.ts";
 export { worktree, type InWorktree, type WorktreeOptions } from "./worktree.ts";

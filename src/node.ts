@@ -38,8 +38,11 @@ export type RunEvent =
   | { type: "retry"; node: string; at: string; attempt: number; error: string }
   | { type: "error"; node: string; at: string; error: string }
   | { type: "stop"; node: string; at: string; reason: string }
-  /** Time was up (timeout's wrapUp): the agent's turn was interrupted and it was asked to answer. */
-  | { type: "wrapUp"; node: string; at: string }
+  /**
+   * The agent's turn was interrupted and it was asked to answer: time was up (timeout's wrapUp),
+   * or with stopped, it was told to stop (steer's stop).
+   */
+  | { type: "wrapUp"; node: string; at: string; stopped?: true }
   /** What an agent said, or with tool, a tool it called and the input in short. */
   | { type: "activity"; node: string; at: string; tool?: string; text: string }
   /** A message sent to the agent while it worked (run's steer) reached its session. */

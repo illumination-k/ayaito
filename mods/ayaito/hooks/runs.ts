@@ -56,8 +56,15 @@ To run a saved flow again from its checkpoints, pass its \`runId\` (with a new \
 export const STOP_SPEC = {
   name: "stop",
   description:
-    "Stops a run that the ayaito run tool started. Its checkpoints stay, so the run can be resumed by its id.",
-  inputSchema: { type: "object", required: ["runId"], properties: { runId: { type: "string" } } },
+    "Stops a run that the ayaito run tool started. Its checkpoints stay, so the run can be resumed by its id. With `node`, stops only the agent of that node, which must be running: it is interrupted and answers from what it has done so far, and the run goes on with that answer. Use it for an agent that has done enough or is stuck.",
+  inputSchema: {
+    type: "object",
+    required: ["runId"],
+    properties: {
+      runId: { type: "string" },
+      node: { type: "string", description: "The name of an agent node, to stop only its agent." },
+    },
+  },
 } as const;
 
 export const STEER_SPEC = {
@@ -135,7 +142,19 @@ export async function start(
   };
 }
 
-export async function stop($: EngineInterface, runId: unknown): Promise<{ result: string } | { deny: string }> {
+export async function stop(
+  $: EngineInterface,
+  dir: string,
+  { runId, node }: { runId?: unknown; node?: unknown },
+): Promise<{ result: string } | { deny: string }> {
+  if (typeof node === "string" && node !== "") {
+    const command = await cli($);
+    if (!command) return { deny: "ayaito is not installed in this project." };
+    if (typeof runId !== "string") return { deny: "Pass runId." };
+    const { exitCode, stdout, stderr } = await $.process.run([...command, "stop", "--store", dir, "--", runId, node]);
+
+    return exitCode === 0 ? { result: stdout.trim() } : { deny: stderr.trim() || stdout.trim() };
+  }
   const run = (await read($, started)).find((one) => one.runId === runId);
   if (!run) return { deny: `No run ${String(runId)} is going that this tool started.` };
   await update($, started, (runs) => runs.filter((one) => one !== run && one.runId !== run.runId));

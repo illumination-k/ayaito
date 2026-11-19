@@ -83,6 +83,7 @@ export function refineNode<I, O, T>(
         onWrapUp: () => ctx.emit({ type: "wrapUp", node: name }),
         steer: steer && ((listener) => steer.listen(name, listener)),
         onSteer: (message) => ctx.emit({ type: "steer", node: name, message }),
+        onStop: () => ctx.emit({ type: "wrapUp", node: name, stopped: true }),
       });
     },
   };
