@@ -1,6 +1,6 @@
 import { Codex, type CodexOptions, type SandboxMode, type ThreadOptions } from "@openai/codex-sdk";
 
-import { type Access, type AgentRuntime, defineRuntime, OutputError } from "./runtime.ts";
+import { type Access, type AgentRuntime, defineRuntime, InterruptedError, OutputError } from "./runtime.ts";
 
 export type CodexRuntimeOptions = CodexOptions & {
   thread?: Omit<ThreadOptions, "approvalPolicy" | "model" | "sandboxMode" | "workingDirectory">;
@@ -31,7 +31,14 @@ export function codexRuntime({ thread, ...base }: CodexRuntimeOptions = {}): Age
         workingDirectory: request.cwd,
       };
       const t = request.sessionId ? codex.resumeThread(request.sessionId, options) : codex.startThread(options);
-      const turn = await t.run(request.prompt, { outputSchema: request.outputSchema, signal: request.signal });
+      let turn: Awaited<ReturnType<typeof t.run>>;
+      try {
+        turn = await t.run(request.prompt, { outputSchema: request.outputSchema, signal: request.signal });
+      } catch (error) {
+        // The thread keeps the turns so far once it has started.
+        if (request.signal?.aborted && t.id) throw new InterruptedError(t.id, request.signal.reason);
+        throw error;
+      }
       const sessionId = t.id;
       if (!sessionId) throw new Error("codex: no thread id after the turn");
       const usage = turn.usage;

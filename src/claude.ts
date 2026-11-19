@@ -7,9 +7,13 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { Tokens } from "./node.ts";
-import { type Access, type AgentRuntime, defineRuntime } from "./runtime.ts";
+import { type Access, type AgentRuntime, defineRuntime, InterruptedError, type Usage } from "./runtime.ts";
 
-export type Query = (params: { prompt: string; options?: Options }) => AsyncIterable<SDKMessage>;
+/** The SDK's query, or a stand-in for tests. interrupt, when there is one, ends the turn and keeps the session. */
+export type Query = (params: {
+  prompt: string;
+  options?: Options;
+}) => AsyncIterable<SDKMessage> & { interrupt?(): Promise<unknown> };
 
 export interface ClaudeRuntimeOptions extends Options {
   /**
@@ -26,6 +30,8 @@ export const defaultOptions: Options = {
 };
 
 const READ = ["Read", "Glob", "Grep"];
+// Waits this long for an interrupted turn to end before stopping the process.
+const INTERRUPT_MS = 10_000;
 const TOOLS: Record<Access, string[]> = { "read-only": READ, write: [...READ, "Edit", "Write", "Bash"] };
 
 /**
@@ -37,9 +43,9 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
   return defineRuntime({
     name: "claude",
     async run(request) {
+      request.signal?.throwIfAborted();
       const abortController = new AbortController();
-      request.signal?.addEventListener("abort", () => abortController.abort(), { once: true });
-      const options: Options = { ...defaultOptions, ...base, abortController };
+      const options: Options = { ...defaultOptions, env: childEnv(), ...base, abortController };
       if (request.cwd) options.cwd = request.cwd;
       if (request.model) options.model = request.model;
       if (request.system) options.systemPrompt = request.system;
@@ -57,8 +63,31 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
       if (request.outputSchema) options.outputFormat = { type: "json_schema", schema: request.outputSchema };
 
       let result: Extract<SDKMessage, { type: "result" }> | undefined;
-      for await (const message of query({ prompt: request.prompt, options })) {
-        if (message.type === "result") result = message;
+      let sessionId: string | undefined;
+      const turn = query({ prompt: request.prompt, options });
+      // Interrupting ends the turn with a result that carries its usage, and the session keeps
+      // what was done; aborting, the fallback, kills the process.
+      let fallback: ReturnType<typeof setTimeout> | undefined;
+      const stop = () => {
+        fallback = setTimeout(() => abortController.abort(), INTERRUPT_MS);
+        if (turn.interrupt) turn.interrupt().catch(() => abortController.abort());
+        else abortController.abort();
+      };
+      request.signal?.addEventListener("abort", stop, { once: true });
+      try {
+        for await (const message of turn) {
+          sessionId ??= message.session_id;
+          if (message.type === "result") result = message;
+        }
+      } catch (error) {
+        if (!request.signal?.aborted) throw error;
+      } finally {
+        clearTimeout(fallback);
+        request.signal?.removeEventListener("abort", stop);
+      }
+      if (request.signal?.aborted) {
+        if (sessionId === undefined) throw request.signal.reason;
+        throw new InterruptedError(sessionId, request.signal.reason, result && usage(result));
       }
       if (!result) throw new Error("claude: no result message");
       if (result.subtype !== "success") throw new Error(`claude: ${result.subtype}: ${result.errors.join("; ")}`);
@@ -68,19 +97,33 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
         text: result.result,
         structured: result.structured_output,
         sessionId: result.session_id,
-        costUsd: result.total_cost_usd,
-        models: Object.fromEntries(
-          Object.entries(result.modelUsage ?? {}).map(([model, u]): [string, Tokens] => [
-            model,
-            {
-              input: u.inputTokens,
-              output: u.outputTokens,
-              cacheRead: u.cacheReadInputTokens,
-              cacheCreation: u.cacheCreationInputTokens,
-            },
-          ]),
-        ),
+        ...usage(result),
       };
     },
   });
+}
+
+function usage(result: Extract<SDKMessage, { type: "result" }>): Usage {
+  return {
+    costUsd: result.total_cost_usd,
+    models: Object.fromEntries(
+      Object.entries(result.modelUsage ?? {}).map(([model, u]): [string, Tokens] => [
+        model,
+        {
+          input: u.inputTokens,
+          output: u.outputTokens,
+          cacheRead: u.cacheReadInputTokens,
+          cacheCreation: u.cacheCreationInputTokens,
+        },
+      ]),
+    ),
+  };
+}
+
+/**
+ * The environment without the session of a Claude Code that runs this process: inherited, it
+ * gives every call that session's id, so that parallel calls and resumes share one session.
+ */
+function childEnv(): Record<string, string | undefined> {
+  return { ...process.env, CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_REMOTE_SESSION_ID: undefined };
 }

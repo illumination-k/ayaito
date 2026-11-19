@@ -19,7 +19,7 @@ import {
 } from "@agentclientprotocol/sdk/unstable";
 
 import type { Tokens } from "./node.ts";
-import { type Access, type AgentRuntime, defineRuntime, OutputError } from "./runtime.ts";
+import { type Access, type AgentRuntime, defineRuntime, InterruptedError, OutputError } from "./runtime.ts";
 
 export interface AcpRuntimeOptions {
   /** The agent to start, which speaks ACP on its stdio. */
@@ -186,7 +186,10 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
           sessionId,
           prompt: [{ type: "text", text: prompt }],
         });
-        if (stopReason === "cancelled") request.signal?.throwIfAborted();
+        if (stopReason === "cancelled" && request.signal?.aborted) {
+          const costUsd = session.costUsd === undefined ? undefined : session.costUsd - costBefore;
+          throw new InterruptedError(sessionId, request.signal.reason, { costUsd });
+        }
         if (stopReason !== "end_turn") throw new Error(`acp: the turn ended with ${stopReason}`);
         // Still unstable in ACP, so only some agents send it. Thought tokens count as output, as on opencode.
         if (usage) {

@@ -95,6 +95,22 @@ export class OutputError extends Error {
   }
 }
 
+/**
+ * The call was cancelled after its session started. The session keeps what the agent did so
+ * far, so it can be resumed: refine resumes it to ask for an answer when time is up.
+ */
+export class InterruptedError extends Error {
+  override name = "InterruptedError";
+  readonly sessionId: string;
+  readonly usage: Usage;
+
+  constructor(sessionId: string, reason: unknown, usage: Usage = {}) {
+    super(reason instanceof Error ? reason.message : `interrupted: ${String(reason)}`, { cause: reason });
+    this.sessionId = sessionId;
+    this.usage = usage;
+  }
+}
+
 /** The request and result of an adapter: JSON Schema in, an unchecked answer out. */
 export type RawRequest = Omit<AgentRequest, "output"> & { outputSchema?: Record<string, unknown> };
 export type RawResult = Omit<AgentResult, "structured"> & { structured?: unknown };

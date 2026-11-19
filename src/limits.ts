@@ -54,23 +54,46 @@ export function budget(limits: Budget): Middleware {
   });
 }
 
+export const DEFAULT_WRAP_UP =
+  "Time is up. Stop working now and give your final answer, based on what you have done so far.";
+
 /**
  * Aborts the node after ms, and throws TimeoutError right away, without waiting for a node
  * that ignores the signal. Inside retry, it limits each attempt; around retry, all of them.
+ *
+ * With wrapUp, time being up is not the end of the work done: after ms, an agent that is
+ * still working is interrupted and asked, in the same session, for its answer from what it
+ * has done so far (prompt, or a default). It has wrapUp.ms more for that; after that the node
+ * is aborted as without wrapUp. An agent that starts during that time is asked to answer at once.
  */
-export function timeout(ms: number): Middleware {
-  return named(`timeout ${duration(ms)}`, (node, next) => async (input, ctx) => {
+export function timeout(ms: number, opts: { wrapUp?: { ms: number; prompt?: string } } = {}): Middleware {
+  const { wrapUp } = opts;
+  const total = ms + (wrapUp?.ms ?? 0);
+  const label = wrapUp ? `timeout ${duration(ms)} + ${duration(wrapUp.ms)} to wrap up` : `timeout ${duration(ms)}`;
+  return named(label, (node, next) => async (input, ctx) => {
     const abort = new AbortController();
-    const error = new TimeoutError(`${node.name}: timed out after ${duration(ms)}`);
+    const timeUp = new AbortController();
+    const error = new TimeoutError(`${node.name}: timed out after ${duration(total)}`);
     const timedOut = new Promise<never>((_, reject) => {
       abort.signal.addEventListener("abort", () => reject(error), { once: true });
     });
-    const timer = setTimeout(() => abort.abort(error), ms);
+    const timers = [setTimeout(() => abort.abort(error), total)];
+    if (wrapUp) timers.push(setTimeout(() => timeUp.abort(), ms));
     try {
-      const signal = AbortSignal.any([ctx.signal, abort.signal]);
-      return await Promise.race([next(input, { ...ctx, signal }), timedOut]);
+      const inner = {
+        ...ctx,
+        signal: AbortSignal.any([ctx.signal, abort.signal]),
+        wrapUp: wrapUp
+          ? {
+              // Time is up as well when a timeout around this one says so.
+              signal: ctx.wrapUp ? AbortSignal.any([ctx.wrapUp.signal, timeUp.signal]) : timeUp.signal,
+              prompt: wrapUp.prompt ?? DEFAULT_WRAP_UP,
+            }
+          : ctx.wrapUp,
+      };
+      return await Promise.race([next(input, inner), timedOut]);
     } finally {
-      clearTimeout(timer);
+      for (const timer of timers) clearTimeout(timer);
     }
   });
 }

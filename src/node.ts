@@ -36,6 +36,8 @@ export type RunEvent =
   | { type: "retry"; node: string; at: string; attempt: number; error: string }
   | { type: "error"; node: string; at: string; error: string }
   | { type: "stop"; node: string; at: string; reason: string }
+  /** Time was up (timeout's wrapUp): the agent's turn was interrupted and it was asked to answer. */
+  | { type: "wrapUp"; node: string; at: string }
   /** usd is absent when the runtime reports tokens only (codex). */
   | { type: "usage"; node: string; at: string; usd?: number; models: Record<string, Tokens> };
 
@@ -64,6 +66,11 @@ export interface Context {
    * inside worktree. Agent nodes without a cwd of their own run there.
    */
   readonly cwd?: string;
+  /**
+   * Set inside timeout with wrapUp. When signal aborts, an agent node interrupts its current
+   * turn and asks the same session for its answer with prompt, instead of being cut off.
+   */
+  readonly wrapUp?: { readonly signal: AbortSignal; readonly prompt: string };
 }
 
 /**

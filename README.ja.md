@@ -53,6 +53,10 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   それまでの分も数える）。超えると signal を止めて `BudgetError` を投げる。呼び出しは終わるときに使用量を報告するので、
   超えた呼び出しは最後まで走る。`timeout(ms)` はノードを止めて `TimeoutError` を投げる。`retry` の内側なら各回、
   外側なら全体を制限する。`retry` は signal が止まったらやり直さない
+- `timeout(ms, { wrapUp: { ms, prompt } })` は時間切れでもそれまでの作業を活かす。作業中のエージェントを中断し、
+  同じセッションでそれまでの結果から答えるよう頼む（`wrapUp` イベント）。その猶予が `wrapUp.ms` で、過ぎれば通常どおり
+  タイムアウトする。時間切れの後に始まるエージェントにはすぐ答えるよう頼み、`refineNode` はその答えの後に試行しない。
+  中断した呼び出しは実行環境が `InterruptedError`（セッションと使用量つき）として返す
 - `branch` の cases は関数が返しうるキーをすべて持つ必要があり、型で検査する。関数の入力には `fnNode` と同じく型を書く
 - `worktree(node, { commit })` はノードに worktree を `ctx.cwd` として渡し、`cwd` のないエージェントのノードはそこで動く
   （`run(..., { cwd })` で実行全体に設定できる）。出力は `{ output, branch, path, commit }`。ブランチは既定で

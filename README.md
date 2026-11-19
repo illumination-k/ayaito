@@ -53,6 +53,11 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   earlier attempts of a resumed run): past it, the signal aborts and `BudgetError` is thrown. A call reports
   usage when it ends, so the call that goes over finishes. `timeout(ms)` aborts a node and throws `TimeoutError`;
   inside `retry` it limits each attempt, around it all of them. `retry` stops once the signal is aborted.
+- `timeout(ms, { wrapUp: { ms, prompt } })` keeps the work done when time is up: an agent still working is
+  interrupted and asked, in the same session, for its answer from what it has done so far (a `wrapUp` event).
+  It has `wrapUp.ms` more for that, then the node times out as usual. An agent that starts after time is up
+  is asked to answer at once, and `refineNode` makes no attempt after that answer. Runtimes report an
+  interrupted call as `InterruptedError`, with its session and usage.
 - `branch`'s cases must cover every key the function can return, checked by the type. Annotate the function's
   input, as with `fnNode`.
 - `worktree(node, { commit })` gives the node the worktree as `ctx.cwd`, which agent nodes without a `cwd` use

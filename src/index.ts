@@ -20,6 +20,7 @@ export { refine, type RefineResult, type Verdict } from "./refine.ts";
 export { run, totalCost, usageReport, type RunResult } from "./run.ts";
 export {
   defineRuntime,
+  InterruptedError,
   OutputError,
   type Access,
   type AgentRequest,
