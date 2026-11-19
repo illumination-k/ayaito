@@ -117,3 +117,6 @@ const { nodes, edges } = toGraph(flow);
 `kind` は `input`、`output`、`fn`、`agent`、`choice`、またはグループ（`flow`、`parallel`、`forEach`、`until`）で、
 グループの中身は `parent` で示す。`name` は実行イベントの `node` と同じなので、`events.jsonl` をグラフに重ねて
 実行中・完了・失敗を表示できる。
+
+`graphSchema` はこのグラフの [JSON Schema](https://json-schema.org/) で、検証や他言語での型生成に使える
+（`JSON.stringify(graphSchema)`）。

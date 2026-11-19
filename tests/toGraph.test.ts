@@ -10,6 +10,7 @@ import {
   fnNode,
   Flow,
   forEach,
+  graphSchema,
   parallel,
   toGraph,
   toMermaid,
@@ -81,5 +82,41 @@ describe("toGraph", () => {
 
     expect(graph).toEqual(toGraph(flow));
     expect(toMermaid(graph)).toBe(toMermaid(flow));
+  });
+
+  it("has a JSON Schema that names every kind and property toGraph uses", () => {
+    const fix = agentNode("fix", { prompt: (task: string) => task, output: z.string() }, noRuntime);
+    const flow = Flow.start<string[]>("ship")
+      .then(forEach("each", worktree(fix), { concurrency: 2, use: [checkpoint] }))
+      .then(
+        parallel("checks", {
+          n: assign(
+            "count",
+            fnNode("count", async (s: { length: number }) => s.length),
+          ),
+        }),
+        {
+          map: (fixes) => ({ length: fixes.length }),
+        },
+      )
+      .then(
+        branch("any?", (s: { n: unknown }) => (s.n ? "yes" : "no"), {
+          yes: until(
+            "loop",
+            fnNode("wait", async (s: { n: unknown }) => s),
+            () => true,
+            2,
+          ),
+          no: fnNode("report", async (s: { n: unknown }) => s),
+        }),
+      )
+      .build();
+    const { nodes, edges } = toGraph(flow);
+    const { node, edge } = graphSchema.$defs;
+
+    expect(new Set(nodes.map((n) => n.kind))).toEqual(new Set(node.properties.kind.enum));
+    expect(new Set(nodes.flatMap((n) => Object.keys(n)))).toEqual(new Set(Object.keys(node.properties)));
+    expect(new Set(edges.flatMap((e) => Object.keys(e)))).toEqual(new Set(Object.keys(edge.properties)));
+    expect(JSON.parse(JSON.stringify(graphSchema))).toEqual(graphSchema);
   });
 });

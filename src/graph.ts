@@ -155,3 +155,56 @@ export function toGraph(node: Node<never, unknown>): Graph {
   connect(exits, "out", { use: [] });
   return { nodes, edges };
 }
+
+/** The JSON Schema (2020-12) of a Graph, for tools that check or generate types from it. */
+export const graphSchema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  title: "Graph",
+  description: "A flow as plain data: its nodes, the groups they are in, and the edges between them.",
+  type: "object",
+  required: ["nodes", "edges"],
+  additionalProperties: false,
+  properties: {
+    nodes: { type: "array", items: { $ref: "#/$defs/node" } },
+    edges: { type: "array", items: { $ref: "#/$defs/edge" } },
+  },
+  $defs: {
+    node: {
+      type: "object",
+      required: ["id", "kind", "label"],
+      additionalProperties: false,
+      properties: {
+        id: { type: "string", description: "Unique in the graph." },
+        kind: {
+          enum: ["input", "output", "fn", "agent", "choice", "flow", "parallel", "forEach", "until"],
+          description:
+            "input and output are the ends of the graph, fn is code, agent an agent, and choice where the paths part. The rest are groups.",
+        },
+        label: { type: "string", description: "What to show." },
+        name: { type: "string", description: "The node of the run events this node emits." },
+        parent: { type: "string", description: "The id of the group this node is in." },
+        assign: { type: "string", description: "The state key the output is assigned to." },
+        worktree: { const: true, description: "Runs in a git worktree." },
+        key: { type: "string", description: "The key of the output among those of a parallel node." },
+        concurrency: { type: "number", description: "How many items run at once (forEach); absent when all do." },
+        max: { type: "number", description: "How many times the body runs at most (until)." },
+      },
+    },
+    edge: {
+      type: "object",
+      required: ["from", "to"],
+      additionalProperties: false,
+      properties: {
+        from: { type: "string", description: "The id of the node the edge leaves." },
+        to: { type: "string", description: "The id of the node the edge leads to." },
+        when: { type: "string", description: "When the edge is taken: the case of a branch, or yes or no of a loop." },
+        map: { const: true, description: "The output is mapped into the next input." },
+        use: {
+          type: "array",
+          items: { type: "string" },
+          description: "The names of the middleware that wraps the node the edge leads to.",
+        },
+      },
+    },
+  },
+} as const;

@@ -121,6 +121,9 @@ const { nodes, edges } = toGraph(flow);
 holds its members through their `parent`. `name` is the `node` of the run's events, so `events.jsonl` can be
 laid over the graph to show what is running, done or failed.
 
+`graphSchema` is the [JSON Schema](https://json-schema.org/) of that graph, to check one or to generate types
+in another language: `JSON.stringify(graphSchema)`.
+
 ## Development
 
 Uses [Vite+](https://viteplus.dev/).
