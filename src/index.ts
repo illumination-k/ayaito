@@ -3,6 +3,7 @@ export { checkpoint, checkpointKey, effect, named, retry, type Edge, type Middle
 export { exec, type ExecResult } from "./exec.ts";
 export { assign, branch, Flow, forEach, parallel, until } from "./flow.ts";
 export { budget, BudgetError, timeout, TimeoutError, type Budget, type Spent } from "./limits.ts";
+export { toGraph, type Graph, type GraphEdge, type GraphNode } from "./graph.ts";
 export { toMermaid } from "./mermaid.ts";
 export {
   fnNode,

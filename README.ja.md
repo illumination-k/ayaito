@@ -102,3 +102,18 @@ console.log(["```mermaid", toMermaid(flow), "```"].join("\n"));
 ````
 
 middleware は関数名で表示する。無名のものは `named("audit", m)` で名前を付ける。
+
+### データとして
+
+`toGraph(flow)` は同じグラフをプレーンな JSON で返す。Mermaid 以外のツール（React Flow、Cytoscape、ELK、
+Graphviz、自作のパネル）に渡せる。`toMermaid` はグラフも受け取る。
+
+```ts
+const { nodes, edges } = toGraph(flow);
+// nodes: { id, kind, label, name?, parent?, assign?, worktree?, key?, concurrency?, max? }
+// edges: { from, to, when?, map?, use? }
+```
+
+`kind` は `input`、`output`、`fn`、`agent`、`choice`、またはグループ（`flow`、`parallel`、`forEach`、`until`）で、
+グループの中身は `parent` で示す。`name` は実行イベントの `node` と同じなので、`events.jsonl` をグラフに重ねて
+実行中・完了・失敗を表示できる。

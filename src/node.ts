@@ -5,11 +5,11 @@ export type Fn<I, O> = (input: I, ctx: Context) => Promise<O>;
 export interface Node<I, O> {
   readonly name: string;
   readonly run: Fn<I, O>;
-  /** How the node is built, for drawing it (toMermaid). A node without one is drawn as code. */
+  /** How the node is built, for drawing it (toGraph, toMermaid). A node without one is drawn as code. */
   readonly shape?: Shape;
 }
 
-/** What toMermaid draws: the parts a node is built from. */
+/** What toGraph describes: the parts a node is built from. */
 export type Shape =
   | { kind: "fn" }
   | { kind: "agent" }

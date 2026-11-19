@@ -106,6 +106,21 @@ console.log(["```mermaid", toMermaid(flow), "```"].join("\n"));
 
 A middleware is labeled by its function name; name an anonymous one with `named("audit", m)`.
 
+### As data
+
+`toGraph(flow)` returns the same graph as plain JSON, for tools other than Mermaid (React Flow, Cytoscape,
+ELK, Graphviz, a panel of your own). `toMermaid` takes a graph too.
+
+```ts
+const { nodes, edges } = toGraph(flow);
+// nodes: { id, kind, label, name?, parent?, assign?, worktree?, key?, concurrency?, max? }
+// edges: { from, to, when?, map?, use? }
+```
+
+`kind` is `input`, `output`, `fn`, `agent`, `choice`, or a group (`flow`, `parallel`, `forEach`, `until`) that
+holds its members through their `parent`. `name` is the `node` of the run's events, so `events.jsonl` can be
+laid over the graph to show what is running, done or failed.
+
 ## Development
 
 Uses [Vite+](https://viteplus.dev/).
