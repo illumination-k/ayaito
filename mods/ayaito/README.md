@@ -5,8 +5,10 @@ running, done, failed or skipped, how long each took and what it cost. It reads 
 `FsStore` under `<dir>/<runId>/`: `graph.json` (the flow as `toGraph` describes it) and `events.jsonl`.
 
 ```bash
-claude --plugin-dir mods/ayaito
+/plugin install ayaito --marketplace illumination-k/ayaito
 ```
+
+From a checkout of this repository, `claude --plugin-dir mods/ayaito` loads it without installing.
 
 Then `/ayaito` opens the pane on the run that last wrote an event in `.runs`. `/ayaito <dir>` reads runs from
 another folder, and `/ayaito <dir> <runId>` stays on one run. The pane follows the run while it goes on.
