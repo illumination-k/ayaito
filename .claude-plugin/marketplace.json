@@ -1,0 +1,24 @@
+{
+  "name": "ayaito",
+  "owner": {
+    "name": "illumination-k"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for ayaito, a small engine for typed agent workflows as graphs."
+  },
+  "plugins": [
+    {
+      "name": "ayaito",
+      "source": "./mods/ayaito",
+      "description": "A pane that shows an ayaito run on its flow's graph: what is running, done or failed, and what it cost.",
+      "version": "0.1.0",
+      "author": {
+        "name": "illumination-k"
+      },
+      "homepage": "https://github.com/illumination-k/ayaito/tree/main/mods/ayaito",
+      "repository": "https://github.com/illumination-k/ayaito",
+      "license": "MIT",
+      "keywords": ["ayaito", "workflow", "agent", "graph"]
+    }
+  ]
+}
