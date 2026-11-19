@@ -1,103 +1,59 @@
+import { type Graph, type GraphNode, toGraph } from "./graph.ts";
 import type { Node } from "./node.ts";
 
-/** Where edges to the next node leave from, and what they say there (the "yes" of a loop). */
-interface Exit {
-  id: string;
-  label?: string;
+/**
+ * Draws a node (usually a built flow), or its graph from toGraph, as a Mermaid flowchart:
+ * code as boxes, agents as rounded boxes, choices of branch as diamonds, and flows, parallel
+ * and forEach nodes and loops as subgraphs. An edge says whether it maps and which
+ * middleware wraps the node it leads to.
+ */
+export function toMermaid(node: Node<never, unknown> | Graph): string {
+  const graph = "nodes" in node ? node : toGraph(node);
+  const lines = ["flowchart TD"];
+
+  const draw = (parent: string | undefined, depth: number) => {
+    const pad = "  ".repeat(depth);
+    for (const n of graph.nodes) {
+      if (n.parent !== parent) continue;
+      const text = `"${escape(title(n))}"`;
+      switch (n.kind) {
+        case "input":
+        case "output":
+          lines.push(`${pad}${n.id}((${n.label}))`);
+          break;
+        case "fn":
+          lines.push(`${pad}${n.id}[${text}]`);
+          break;
+        case "agent":
+          lines.push(`${pad}${n.id}([${text}]):::agent`);
+          break;
+        case "choice":
+          lines.push(`${pad}${n.id}{${text}}`);
+          break;
+        default:
+          lines.push(`${pad}subgraph ${n.id}[${text}]`);
+          draw(n.id, depth + 1);
+          lines.push(`${pad}end`);
+      }
+    }
+  };
+  draw(undefined, 1);
+
+  for (const edge of graph.edges) {
+    const text = [edge.when, edge.map && "map", ...(edge.use ?? [])].filter(Boolean).join(", ");
+    lines.push(text ? `  ${edge.from} -->|"${escape(text)}"| ${edge.to}` : `  ${edge.from} --> ${edge.to}`);
+  }
+  return [...lines, "  classDef agent fill:#ede9fe,stroke:#7c3aed"].join("\n");
 }
 
-/**
- * Draws a node (usually a built flow) as a Mermaid flowchart: code as boxes, agents as
- * rounded boxes, choices of branch as diamonds, and flows, parallel and forEach nodes and loops
- * as subgraphs. An edge says whether it maps
- * and which middleware wraps the node it leads to.
- */
-export function toMermaid(node: Node<never, unknown>): string {
-  const nodes = ["flowchart TD", "  in((input))"];
-  const edges: string[] = [];
-  let count = 0;
-  const id = (prefix: string) => `${prefix}${count++}`;
-
-  const connect = (from: Exit[], to: string, label: string[]) => {
-    for (const exit of from) {
-      const text = [exit.label, ...label].filter(Boolean).join(", ");
-      edges.push(text ? `  ${exit.id} -->|"${escape(text)}"| ${to}` : `  ${exit.id} --> ${to}`);
-    }
-  };
-
-  const draw = (
-    node: Node<never, unknown>,
-    from: Exit[],
-    label: string[],
-    depth: number,
-    title = node.name,
-  ): Exit[] => {
-    const shape = node.shape ?? { kind: "fn" };
-    const pad = "  ".repeat(depth);
-    switch (shape.kind) {
-      case "fn":
-      case "agent": {
-        const n = id("n");
-        nodes.push(
-          shape.kind === "agent" ? `${pad}${n}(["${escape(title)}"]):::agent` : `${pad}${n}["${escape(title)}"]`,
-        );
-        connect(from, n, label);
-        return [{ id: n }];
-      }
-      case "assign":
-        return draw(shape.node, from, label, depth, `${shape.node.name} → ${shape.key}`);
-      case "worktree":
-        return draw(shape.node, from, label, depth, `${title} (worktree)`);
-      case "branch": {
-        const choice = id("c");
-        nodes.push(`${pad}${choice}{"${escape(title)}"}`);
-        connect(from, choice, label);
-        return Object.entries(shape.cases).flatMap(([key, node]) =>
-          draw(node, [{ id: choice, label: key }], [], depth),
-        );
-      }
-      case "forEach": {
-        const limit = shape.concurrency === undefined ? "" : `, ${shape.concurrency} at a time`;
-        nodes.push(`${pad}subgraph ${id("s")}["${escape(`${title} (each item${limit})`)}"]`);
-        const exits = draw(shape.body, from, [...label, ...shape.use], depth + 1);
-        nodes.push(`${pad}end`);
-        return exits;
-      }
-      case "flow": {
-        nodes.push(`${pad}subgraph ${id("s")}["${escape(title)}"]`);
-        let exits = from;
-        let edge = label;
-        for (const step of shape.steps) {
-          exits = draw(step.node, exits, [...edge, ...(step.map ? ["map"] : []), ...step.use], depth + 1);
-          edge = [];
-        }
-        nodes.push(`${pad}end`);
-        return exits;
-      }
-      case "parallel": {
-        nodes.push(`${pad}subgraph ${id("s")}["${escape(title)}"]`);
-        const exits = Object.entries(shape.branches).flatMap(([key, branch]) =>
-          draw(branch, from, [...label, ...shape.use], depth + 1, key === branch.name ? key : `${key}: ${branch.name}`),
-        );
-        nodes.push(`${pad}end`);
-        return exits;
-      }
-      case "until": {
-        nodes.push(`${pad}subgraph ${id("s")}["${escape(`${title} (at most ${shape.max})`)}"]`);
-        const done = id("c");
-        nodes.push(`${pad}  ${done}{"done?"}`);
-        connect(from, done, label);
-        connect(draw(shape.body, [{ id: done, label: "no" }], [], depth + 1), done, []);
-        nodes.push(`${pad}end`);
-        return [{ id: done, label: "yes" }];
-      }
-    }
-  };
-
-  const exits = draw(node, [{ id: "in" }], [], 1);
-  nodes.push("  out((output))");
-  connect(exits, "out", []);
-  return [...nodes, ...edges, "  classDef agent fill:#ede9fe,stroke:#7c3aed"].join("\n");
+/** The label with what wraps the node: its key in parallel, assign, a worktree, the limits of a group. */
+function title(n: GraphNode): string {
+  let text = n.key === undefined || n.key === n.label ? n.label : `${n.key}: ${n.label}`;
+  if (n.assign !== undefined) text += ` → ${n.assign}`;
+  if (n.worktree) text += " (worktree)";
+  if (n.kind === "forEach") text += ` (each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`})`;
+  if (n.kind === "until") text += ` (at most ${n.max})`;
+  return text;
 }
 
 /** Mermaid ends a quoted label at `"`; the entity keeps it. */
