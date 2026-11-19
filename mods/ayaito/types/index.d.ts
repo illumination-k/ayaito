@@ -29,8 +29,11 @@ export type View = {
   note?: string;
 };
 
+/** A run the run tool started, until its end is told to Claude. */
+export type Started = { runId: string; dir: string; pid: number };
+
 declare module "claude-code" {
   interface PluginState {
-    ayaito: { source: Shaped<Source>; view: Shaped<View> };
+    ayaito: { source: Shaped<Source>; view: Shaped<View>; started: Shaped<Started[]> };
   }
 }

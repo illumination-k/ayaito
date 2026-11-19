@@ -2,6 +2,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import type { Status, View } from "../types";
+import { RUN, RUN_SPEC, start, STOP, STOP_SPEC, stop, watch } from "./runs";
 import { money, parseEvents, view as toView } from "./view";
 import type { Graph } from "./view";
 
@@ -95,9 +96,26 @@ export const register: Register = (on) => {
     seen = "";
     // A read that fails (a file half written) is tried again at the next tick.
     $.clock.every(1500, () => void refresh($).catch(() => {}));
+    await $.tool.register(RUN_SPEC);
+    await $.tool.register(STOP_SPEC);
+    $.clock.every(2000, () => void watch($).catch(() => {}));
 
     return next(e);
   });
+
+  on("tool.run", { tool: RUN }, async ($, e) => {
+    const { dir } = await read($, source);
+    const answer = await start($, dir, e as Record<string, unknown>);
+    if ("result" in answer) {
+      // The pane follows the run that last wrote, which is now this one.
+      seen = "";
+      void $.ui.open({ id: PANE, title: TITLE });
+    }
+
+    return answer;
+  });
+
+  on("tool.run", { tool: STOP }, ($, e) => stop($, (e as Record<string, unknown>).runId));
 
   on("command.run", { command: "ayaito" }, async ($, e) => {
     const [dir, runId] = e.args.trim().split(/\s+/).filter(Boolean);

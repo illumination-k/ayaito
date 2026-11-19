@@ -124,10 +124,23 @@ laid over the graph to show what is running, done or failed.
 `graphSchema` is the [JSON Schema](https://json-schema.org/) of that graph, to check one or to generate types
 in another language: `JSON.stringify(graphSchema)`.
 
+### From the command line
+
+`ayaito run flow.ts` runs the flow a file exports as default and saves the run under `.runs/<run id>/`, with the
+result as `result.json`; `ayaito graph flow.ts` prints its graph as JSON (`--mermaid` for a flowchart). Node
+runs a `.ts` file by stripping its types (22.18 or later).
+
+```bash
+npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run
+npx ayaito graph flow.ts > graph.json
+```
+
 ### In Claude Code
 
 `run` saves the graph as `graph.json` beside `events.jsonl`. The mod in [`mods/ayaito`](mods/ayaito) reads both
 and shows the run on its graph in a pane beside the chat, live: `claude --plugin-dir mods/ayaito`, then `/ayaito`.
+It also gives Claude a tool to write a flow and start it in the background, as it would a workflow of
+subagents: the pane follows the run and its result comes back to the conversation.
 
 ## Development
 

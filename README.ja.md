@@ -121,8 +121,21 @@ const { nodes, edges } = toGraph(flow);
 `graphSchema` はこのグラフの [JSON Schema](https://json-schema.org/) で、検証や他言語での型生成に使える
 （`JSON.stringify(graphSchema)`）。
 
+### コマンドラインから
+
+`ayaito run flow.ts` はファイルが default export するフローを実行し、`.runs/<run id>/` に保存する（結果は
+`result.json`）。`ayaito graph flow.ts` はグラフを JSON で出力する（`--mermaid` で flowchart）。`.ts` は Node が
+型を取り除いて実行する（22.18 以降）。
+
+```bash
+npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
+npx ayaito graph flow.ts > graph.json
+```
+
 ### Claude Code で見る
 
 `run` はグラフを `graph.json` として `events.jsonl` の隣に保存する。[`mods/ayaito`](mods/ayaito) の mod は両方を読み、
 チャットの横のペインに実行状況をグラフ上で表示する（実行中も追従する）。`claude --plugin-dir mods/ayaito` で起動し、
 `/ayaito` で開く。
+mod は Claude にフローを書いてバックグラウンドで起動するツールも渡す（サブエージェントのワークフローと同じ感覚で
+使える）。ペインが実行を追い、結果は会話に戻る。
