@@ -8,7 +8,8 @@ interface Exit {
 
 /**
  * Draws a node (usually a built flow) as a Mermaid flowchart: code as boxes, agents as
- * rounded boxes, flows, parallel nodes and loops as subgraphs. An edge says whether it maps
+ * rounded boxes, choices of branch as diamonds, and flows, parallel and forEach nodes and loops
+ * as subgraphs. An edge says whether it maps
  * and which middleware wraps the node it leads to.
  */
 export function toMermaid(node: Node<never, unknown>): string {
@@ -45,6 +46,23 @@ export function toMermaid(node: Node<never, unknown>): string {
       }
       case "assign":
         return draw(shape.node, from, label, depth, `${shape.node.name} → ${shape.key}`);
+      case "worktree":
+        return draw(shape.node, from, label, depth, `${title} (worktree)`);
+      case "branch": {
+        const choice = id("c");
+        nodes.push(`${pad}${choice}{"${escape(title)}"}`);
+        connect(from, choice, label);
+        return Object.entries(shape.cases).flatMap(([key, node]) =>
+          draw(node, [{ id: choice, label: key }], [], depth),
+        );
+      }
+      case "forEach": {
+        const limit = shape.concurrency === undefined ? "" : `, ${shape.concurrency} at a time`;
+        nodes.push(`${pad}subgraph ${id("s")}["${escape(`${title} (each item${limit})`)}"]`);
+        const exits = draw(shape.body, from, [...label, ...shape.use], depth + 1);
+        nodes.push(`${pad}end`);
+        return exits;
+      }
       case "flow": {
         nodes.push(`${pad}subgraph ${id("s")}["${escape(title)}"]`);
         let exits = from;

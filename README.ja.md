@@ -35,9 +35,12 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                        |
 | `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`） |
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                       |
-| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）                                                              |
+| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                         |
 | `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                   |
 | `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                                                           |
+| `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                    |
+| `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                      |
+| `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                       |
 | `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー）の保存                                                                              |
 | `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                                                      |
 | `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                                                             |
@@ -46,6 +49,19 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   走り直して入力が変わったノードは走り直す。特定のノードからやり直すときは `store.invalidate`
 - `run` に `signal` を渡すと実行を止められる。止めた後はノードを始めず、エージェントにも伝わる。
   `parallel` の 1 つが失敗すると、ほかも止める
+- edge の `budget({ usd, tokens })` はノードの、`run(..., { budget })` は実行全体の支出を制限する（再開した実行は
+  それまでの分も数える）。超えると signal を止めて `BudgetError` を投げる。呼び出しは終わるときに使用量を報告するので、
+  超えた呼び出しは最後まで走る。`timeout(ms)` はノードを止めて `TimeoutError` を投げる。`retry` の内側なら各回、
+  外側なら全体を制限する。`retry` は signal が止まったらやり直さない
+- `timeout(ms, { wrapUp: { ms, prompt } })` は時間切れでもそれまでの作業を活かす。作業中のエージェントを中断し、
+  同じセッションでそれまでの結果から答えるよう頼む（`wrapUp` イベント）。その猶予が `wrapUp.ms` で、過ぎれば通常どおり
+  タイムアウトする。時間切れの後に始まるエージェントにはすぐ答えるよう頼み、`refineNode` はその答えの後に試行しない。
+  中断した呼び出しは実行環境が `InterruptedError`（セッションと使用量つき）として返す
+- `branch` の cases は関数が返しうるキーをすべて持つ必要があり、型で検査する。関数の入力には `fnNode` と同じく型を書く
+- `worktree(node, { commit })` はノードに worktree を `ctx.cwd` として渡し、`cwd` のないエージェントのノードはそこで動く
+  （`run(..., { cwd })` で実行全体に設定できる）。出力は `{ output, branch, path, commit }`。ブランチは既定で
+  `ayaito/<runId>/<ノード>-<入力のハッシュ>` なので、再開した実行は同じものを使う。`remove: true` は worktree を消し、
+  ブランチは残す
 - モデル別のトークンと費用は `usage` イベントになる（codex はトークンだけ）。`usageReport(await ctx.history())` で
   ノード別のトークン表（markdown）を作れる（再開前の実行や、ループ・リトライの各回も合算する）
 

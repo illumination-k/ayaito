@@ -5,6 +5,7 @@ import {
   type AgentRequest,
   type AgentResult,
   type AgentRuntime,
+  InterruptedError,
   OutputError,
   type OutputSchema,
   type Usage,
@@ -69,18 +70,20 @@ export function refineNode<I, O, T>(
     run: async (input, ctx) =>
       refine({
         runtime: metered(runtime, name, ctx),
-        request: { ...request, prompt: prompt(input), node: name, signal: ctx.signal },
+        request: { ...request, cwd: request.cwd ?? ctx.cwd, prompt: prompt(input), node: name, signal: ctx.signal },
         check: async (result, attempt) => {
           const verdict = await check(result, input, attempt);
           if (!verdict.ok) ctx.emit({ type: "retry", node: name, attempt, error: verdict.feedback });
           return verdict;
         },
         maxAttempts,
+        wrapUp: ctx.wrapUp,
+        onWrapUp: () => ctx.emit({ type: "wrapUp", node: name }),
       }),
   };
 }
 
-/** Records the usage of every call, and a schema miss as a retry. */
+/** Records the usage of every call (an interrupted one too), and a schema miss as a retry. */
 function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntime {
   let calls = 0;
   const usage = ({ costUsd, models }: Usage) => {
@@ -96,6 +99,7 @@ function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntim
         usage(result);
         return result;
       } catch (error) {
+        if (error instanceof InterruptedError) usage(error.usage);
         if (error instanceof OutputError) {
           usage(error.usage);
           ctx.emit({ type: "retry", node, attempt: calls, error: error.issues });

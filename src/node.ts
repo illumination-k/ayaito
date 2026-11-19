@@ -16,7 +16,10 @@ export type Shape =
   | { kind: "flow"; steps: Step[] }
   | { kind: "parallel"; branches: Record<string, Node<never, unknown>>; use: string[] }
   | { kind: "until"; body: Node<never, unknown>; max: number }
-  | { kind: "assign"; key: string; node: Node<never, unknown> };
+  | { kind: "assign"; key: string; node: Node<never, unknown> }
+  | { kind: "branch"; cases: Record<string, Node<never, unknown>> }
+  | { kind: "forEach"; body: Node<never, unknown>; concurrency?: number; use: string[] }
+  | { kind: "worktree"; node: Node<never, unknown> };
 
 /** A node of a flow and the edge into it: whether it maps, and the names of its middleware. */
 export interface Step {
@@ -33,6 +36,8 @@ export type RunEvent =
   | { type: "retry"; node: string; at: string; attempt: number; error: string }
   | { type: "error"; node: string; at: string; error: string }
   | { type: "stop"; node: string; at: string; reason: string }
+  /** Time was up (timeout's wrapUp): the agent's turn was interrupted and it was asked to answer. */
+  | { type: "wrapUp"; node: string; at: string }
   /** usd is absent when the runtime reports tokens only (codex). */
   | { type: "usage"; node: string; at: string; usd?: number; models: Record<string, Tokens> };
 
@@ -56,6 +61,16 @@ export interface Context {
   readonly history: () => Promise<RunEvent[]>;
   /** Aborted when the run is cancelled, or when a sibling in parallel fails. */
   readonly signal: AbortSignal;
+  /**
+   * The directory nodes work in, when one is set: run's cwd, or the worktree of a node
+   * inside worktree. Agent nodes without a cwd of their own run there.
+   */
+  readonly cwd?: string;
+  /**
+   * Set inside timeout with wrapUp. When signal aborts, an agent node interrupts its current
+   * turn and asks the same session for its answer with prompt, instead of being cut off.
+   */
+  readonly wrapUp?: { readonly signal: AbortSignal; readonly prompt: string };
 }
 
 /**

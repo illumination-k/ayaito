@@ -103,6 +103,75 @@ export function assign<S extends object, K extends string, O>(key: K, node: Node
   };
 }
 
+type OutputOf<N> = N extends Node<never, infer O> ? O : never;
+
+/**
+ * Runs the one node that route picks for the input: a review that passes goes on, one that
+ * fails goes to a fix; an easy task goes to a cheaper model. The keys of cases must cover
+ * every key route can return, and the output is any of theirs.
+ */
+export function branch<I, K extends string, C extends Record<K, Node<I, unknown>>>(
+  name: string,
+  route: (input: I, ctx: Context) => K | Promise<K>,
+  cases: C,
+): Node<I, OutputOf<C[K]>> {
+  const runs = new Map(Object.entries<Node<I, unknown>>(cases).map(([key, node]) => [key, wrap(node, [])]));
+  return {
+    name,
+    shape: { kind: "branch", cases: cases as Record<string, Node<never, unknown>> },
+    run: async (input, ctx) => {
+      const key = await route(input, ctx);
+      const run = runs.get(key);
+      if (!run) throw new Error(`${name}: no case for "${key}"`);
+      return (await run(input, ctx)) as OutputOf<C[K]>;
+    },
+  };
+}
+
+/**
+ * Runs node on each item of its input, at most concurrency at once (default all), and
+ * returns their outputs in the order of the items: the tasks a planning agent listed, one
+ * worker each. Each item runs through the middleware (a checkpoint keeps the items that
+ * finished when another fails), and the first to fail aborts the others.
+ */
+export function forEach<T, O>(
+  name: string,
+  node: Node<T, O>,
+  opts: { concurrency?: number; use?: Middleware[] } = {},
+): Node<readonly T[], O[]> {
+  const { concurrency } = opts;
+  if (concurrency !== undefined && !(concurrency >= 1)) throw new Error(`${name}: concurrency must be at least 1`);
+  const run = wrap(node, opts.use ?? []);
+  return {
+    name,
+    shape: {
+      kind: "forEach",
+      body: node as Node<never, unknown>,
+      concurrency,
+      use: (opts.use ?? []).map(middlewareName),
+    },
+    run: async (items, ctx) => {
+      const abort = new AbortController();
+      const inner: Context = { ...ctx, signal: AbortSignal.any([ctx.signal, abort.signal]) };
+      const outputs: O[] = Array.from({ length: items.length });
+      let next = 0;
+      const worker = async () => {
+        while (next < items.length) {
+          const i = next++;
+          outputs[i] = await run(items[i] as T, inner);
+        }
+      };
+      try {
+        await Promise.all(Array.from({ length: Math.min(concurrency ?? items.length, items.length) }, worker));
+        return outputs;
+      } catch (error) {
+        abort.abort(error);
+        throw error;
+      }
+    },
+  };
+}
+
 type InputOf<T> = [T[keyof T]] extends [Node<infer I, unknown>] ? I : never;
 type OutputsOf<T> = { [K in keyof T]: T[K] extends Node<never, infer O> ? O : never };
 

@@ -1,7 +1,8 @@
 export { agentNode, refineNode, type AgentConfig } from "./agent.ts";
 export { checkpoint, checkpointKey, effect, named, retry, type Edge, type Middleware } from "./edge.ts";
 export { exec, type ExecResult } from "./exec.ts";
-export { assign, Flow, parallel, until } from "./flow.ts";
+export { assign, branch, Flow, forEach, parallel, until } from "./flow.ts";
+export { budget, BudgetError, timeout, TimeoutError, type Budget, type Spent } from "./limits.ts";
 export { toMermaid } from "./mermaid.ts";
 export {
   fnNode,
@@ -19,6 +20,7 @@ export { refine, type RefineResult, type Verdict } from "./refine.ts";
 export { run, totalCost, usageReport, type RunResult } from "./run.ts";
 export {
   defineRuntime,
+  InterruptedError,
   OutputError,
   type Access,
   type AgentRequest,
@@ -30,3 +32,4 @@ export {
   type Usage,
 } from "./runtime.ts";
 export { FsStore } from "./store.ts";
+export { worktree, type InWorktree, type WorktreeOptions } from "./worktree.ts";

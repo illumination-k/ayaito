@@ -10,7 +10,7 @@ import {
   type ServerOptions,
 } from "@opencode-ai/sdk/v2";
 
-import { type Access, type AgentRuntime, defineRuntime } from "./runtime.ts";
+import { type Access, type AgentRuntime, defineRuntime, InterruptedError } from "./runtime.ts";
 
 export interface OpencodeRuntimeOptions {
   /** URL of an `opencode serve` to use. Otherwise the runtime starts its own (needs `opencode` on PATH) and close stops it. */
@@ -86,6 +86,9 @@ export function opencodeRuntime(options: OpencodeRuntimeOptions = {}): AgentRunt
             },
           },
         };
+      } catch (error) {
+        if (request.signal?.aborted) throw new InterruptedError(sessionID, request.signal.reason);
+        throw error;
       } finally {
         request.signal?.removeEventListener("abort", abort);
       }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
 import { claudeRuntime } from "../src/claude.ts";
+import { InterruptedError } from "../src/runtime.ts";
 
 const result = (fields: Record<string, unknown>) =>
   ({
@@ -75,6 +76,43 @@ describe("claudeRuntime", () => {
       allowedTools: ["Read", "Glob", "Grep"],
       permissionMode: "dontAsk",
     });
+  });
+
+  it("interrupts the turn on abort and reports the session and its usage", async () => {
+    let interrupted = false;
+    const query = () => {
+      let resolve = () => {};
+      const stopped = new Promise<void>((r) => (resolve = r));
+      return Object.assign(
+        (async function* () {
+          yield { type: "system", subtype: "init", session_id: "s9" } as unknown as SDKMessage;
+          await stopped;
+          yield result({ subtype: "error_during_execution", session_id: "s9", errors: [] });
+          throw new Error("Claude Code returned an error result");
+        })(),
+        { interrupt: async () => ((interrupted = true), resolve()) },
+      );
+    };
+    const abort = new AbortController();
+    const running = claudeRuntime({}, query).run({ prompt: "", signal: abort.signal });
+    setTimeout(() => abort.abort(new Error("time is up")), 5);
+
+    const error = await running.catch((e: unknown) => e);
+    expect(interrupted).toBe(true);
+    expect(error).toBeInstanceOf(InterruptedError);
+    expect(error).toMatchObject({ sessionId: "s9", message: "time is up", usage: { costUsd: 0.5 } });
+  });
+
+  it("keeps the session of a Claude Code that runs it out of the environment", async () => {
+    const seen: { prompt: string; options?: Options }[] = [];
+    process.env.CLAUDE_CODE_SESSION_ID = "parent";
+    try {
+      await claudeRuntime({}, fakeQuery(result({}), seen)).run({ prompt: "" });
+    } finally {
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+    }
+    expect(seen[0]?.options?.env).toHaveProperty("CLAUDE_CODE_SESSION_ID", undefined);
+    expect(seen[0]?.options?.env?.PATH).toBe(process.env.PATH);
   });
 
   it("throws when the agent fails", async () => {
