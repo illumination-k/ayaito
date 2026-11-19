@@ -2,7 +2,7 @@ import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
 import type { Status, View } from "../types";
-import { RUN, RUN_SPEC, start, STOP, STOP_SPEC, stop, watch } from "./runs";
+import { RUN, RUN_SPEC, start, STEER, STEER_SPEC, steer, STOP, STOP_SPEC, stop, watch } from "./runs";
 import { money, parseEvents, view as toView } from "./view";
 import type { Graph } from "./view";
 
@@ -19,7 +19,7 @@ const shown = atom(
   { plugin: "ayaito", key: "view" } as const,
   { dir: DIR, rows: [], done: 0, total: 0, usd: 0 },
   {
-    shape: "view-1",
+    shape: "view-2",
   },
 );
 
@@ -98,6 +98,7 @@ export const register: Register = (on) => {
     $.clock.every(1500, () => void refresh($).catch(() => {}));
     await $.tool.register(RUN_SPEC);
     await $.tool.register(STOP_SPEC);
+    await $.tool.register(STEER_SPEC);
     $.clock.every(2000, () => void watch($).catch(() => {}));
 
     return next(e);
@@ -115,7 +116,9 @@ export const register: Register = (on) => {
     return answer;
   });
 
-  on("tool.run", { tool: STOP }, ($, e) => stop($, (e as Record<string, unknown>).runId));
+  on("tool.run", { tool: STOP }, async ($, e) => stop($, (await read($, source)).dir, e as Record<string, unknown>));
+
+  on("tool.run", { tool: STEER }, async ($, e) => steer($, (await read($, source)).dir, e as Record<string, unknown>));
 
   on("command.run", { command: "ayaito" }, async ($, e) => {
     const [dir, runId] = e.args.trim().split(/\s+/).filter(Boolean);
@@ -174,6 +177,13 @@ export const register: Register = (on) => {
                 </Text>
                 {row.detail !== "" && <Text dimColor> {row.detail}</Text>}
               </Text>
+              {row.activity !== undefined && (
+                <Box paddingLeft={2}>
+                  <Text dimColor wrap="truncate-end">
+                    {row.activity}
+                  </Text>
+                </Box>
+              )}
               {row.error !== undefined && (
                 <Box paddingLeft={2}>
                   <Text color="error" maxLines={3}>

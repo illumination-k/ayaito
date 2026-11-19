@@ -10,7 +10,7 @@ import {
   type ServerOptions,
 } from "@opencode-ai/sdk/v2";
 
-import { type Access, type AgentRuntime, defineRuntime, InterruptedError } from "./runtime.ts";
+import { type Access, type Activity, type AgentRuntime, brief, defineRuntime, InterruptedError } from "./runtime.ts";
 
 export interface OpencodeRuntimeOptions {
   /** URL of an `opencode serve` to use. Otherwise the runtime starts its own (needs `opencode` on PATH) and close stops it. */
@@ -29,6 +29,8 @@ const PERMISSION: Record<Access, PermissionRuleset> = {
   write: [{ permission: "*", pattern: "*", action: "deny" }, ...allow(...READ, "edit", "bash")],
 };
 const POLL_MS = 1000;
+// How many of the last messages a poll looks at for parts to report.
+const RECENT = 10;
 
 /** Runs calls through an opencode server, read-only unless the call asks for write. */
 export function opencodeRuntime(options: OpencodeRuntimeOptions = {}): AgentRuntime {
@@ -52,6 +54,7 @@ export function opencodeRuntime(options: OpencodeRuntimeOptions = {}): AgentRunt
         ? await client.session.update({ sessionID: request.sessionId, directory, permission }, { throwOnError: true })
         : await client.session.create({ directory, agent: options.agent, permission }, { throwOnError: true });
       const sessionID = session.data.id;
+      request.onSession?.(sessionID);
       const abort = () => void client.session.abort({ sessionID, directory });
       request.signal?.addEventListener("abort", abort, { once: true });
       try {
@@ -70,7 +73,7 @@ export function opencodeRuntime(options: OpencodeRuntimeOptions = {}): AgentRunt
           },
           { throwOnError: true, signal: request.signal },
         );
-        const { info, parts } = await reply(client, sessionID, directory, before, request.signal);
+        const { info, parts } = await reply(client, sessionID, directory, before, request.signal, request.onActivity);
         if (info.error) throw new Error(`opencode: ${info.error.name}: ${JSON.stringify(info.error.data)}`);
         return {
           text: parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join(""),
@@ -111,9 +114,31 @@ async function reply(
   directory: string,
   before: string | undefined,
   signal: AbortSignal | undefined,
+  onActivity?: (activity: Activity) => void,
 ): Promise<{ info: AssistantMessage; parts: Part[] }> {
+  const shown = new Set<string>();
+  /** Reports the parts of the turn that were not there at the last poll. Showing progress must not fail the call. */
+  const show = async () => {
+    if (!onActivity) return;
+    const recent = await client.session.messages({ sessionID, directory, limit: RECENT }).catch(() => undefined);
+    const messages = recent?.data ?? [];
+    for (const { info, parts } of messages.slice(messages.findIndex((m) => m.info.id === before) + 1)) {
+      if (info.role !== "assistant") continue;
+      for (const part of parts) {
+        if (shown.has(part.id)) continue;
+        if (part.type === "text" && part.time?.end !== undefined && !part.synthetic && part.text.trim() !== "") {
+          onActivity({ text: part.text });
+        } else if (part.type === "tool" && part.state.status !== "pending") {
+          const title = "title" in part.state ? part.state.title : undefined;
+          onActivity({ tool: part.tool, text: title || brief(part.state.input) });
+        } else continue;
+        shown.add(part.id);
+      }
+    }
+  };
   for (;;) {
     await sleep(POLL_MS, undefined, { signal });
+    await show();
     const { data: statuses } = await client.session.status({ directory }, { throwOnError: true });
     const status = statuses[sessionID];
     if (status && status.type !== "idle") continue;

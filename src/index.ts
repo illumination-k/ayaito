@@ -20,6 +20,7 @@ export {
 export { refine, type RefineResult, type Verdict } from "./refine.ts";
 export { run, totalCost, usageReport, type RunResult } from "./run.ts";
 export {
+  brief,
   defineRuntime,
   InterruptedError,
   OutputError,
@@ -27,10 +28,12 @@ export {
   type AgentRequest,
   type AgentResult,
   type AgentRuntime,
+  type Activity,
   type OutputSchema,
   type RawRequest,
   type RawResult,
   type Usage,
 } from "./runtime.ts";
+export { steering, type Sent, type Steer } from "./steer.ts";
 export { FsStore } from "./store.ts";
 export { worktree, type InWorktree, type WorktreeOptions } from "./worktree.ts";

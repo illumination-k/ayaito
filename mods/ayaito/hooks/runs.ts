@@ -5,6 +5,7 @@ import type { Started } from "../types";
 
 export const RUN = "mcp__ayaito__run";
 export const STOP = "mcp__ayaito__stop";
+export const STEER = "mcp__ayaito__steer";
 
 /** What Claude reads of a result or a log: the rest is in the run's folder. */
 const SHOWN = 8000;
@@ -55,8 +56,33 @@ To run a saved flow again from its checkpoints, pass its \`runId\` (with a new \
 export const STOP_SPEC = {
   name: "stop",
   description:
-    "Stops a run that the ayaito run tool started. Its checkpoints stay, so the run can be resumed by its id.",
-  inputSchema: { type: "object", required: ["runId"], properties: { runId: { type: "string" } } },
+    "Stops a run that the ayaito run tool started. Its checkpoints stay, so the run can be resumed by its id. With `node`, stops only the agent of that node, which must be running: it is interrupted and answers from what it has done so far, and the run goes on with that answer. Use it for an agent that has done enough or is stuck.",
+  inputSchema: {
+    type: "object",
+    required: ["runId"],
+    properties: {
+      runId: { type: "string" },
+      node: {
+        type: "string",
+        description: "To stop only an agent: its node's name, name#item in a forEach, or its session id.",
+      },
+    },
+  },
+} as const;
+
+export const STEER_SPEC = {
+  name: "steer",
+  description:
+    "Sends a message to an agent of a run while it works: its turn is interrupted, it reads the message and goes on with its task. Use it to correct or redirect an agent that is going wrong, without stopping the run. `node` is the name of an agent node that is running now; in a forEach, where one node has an agent per item, `name#item` (fix#2) reaches the agent of that item and the bare name all of them; the id of an agent's session reaches that agent too. To see what the agents are doing, read the end of <runs dir>/<runId>/events.jsonl: its session lines have each agent's session id, its activity lines what each agent said and the tools it called (with `item` inside a forEach), and a steer line appears when the agent got the message.",
+  inputSchema: {
+    type: "object",
+    required: ["runId", "node", "message"],
+    properties: {
+      runId: { type: "string" },
+      node: { type: "string", description: "The agent node's name, name#item in a forEach, or a session id." },
+      message: { type: "string", description: "What to tell the agent." },
+    },
+  },
 } as const;
 
 /** How to start ayaito's CLI here: the project's own, or ayaito's repository itself. */
@@ -119,13 +145,43 @@ export async function start(
   };
 }
 
-export async function stop($: EngineInterface, runId: unknown): Promise<{ result: string } | { deny: string }> {
+export async function stop(
+  $: EngineInterface,
+  dir: string,
+  { runId, node }: { runId?: unknown; node?: unknown },
+): Promise<{ result: string } | { deny: string }> {
+  if (typeof node === "string" && node !== "") {
+    const command = await cli($);
+    if (!command) return { deny: "ayaito is not installed in this project." };
+    if (typeof runId !== "string") return { deny: "Pass runId." };
+    const { exitCode, stdout, stderr } = await $.process.run([...command, "stop", "--store", dir, "--", runId, node]);
+
+    return exitCode === 0 ? { result: stdout.trim() } : { deny: stderr.trim() || stdout.trim() };
+  }
   const run = (await read($, started)).find((one) => one.runId === runId);
   if (!run) return { deny: `No run ${String(runId)} is going that this tool started.` };
   await update($, started, (runs) => runs.filter((one) => one !== run && one.runId !== run.runId));
   await $.process.run(["kill", String(run.pid)]);
 
   return { result: `Stopped run ${run.runId}. Resume it by passing its runId to the run tool.` };
+}
+
+/** Leaves a message for an agent of a run, through the CLI, which knows whether the node is at work. */
+export async function steer(
+  $: EngineInterface,
+  dir: string,
+  e: { runId?: unknown; node?: unknown; message?: unknown },
+): Promise<{ result: string } | { deny: string }> {
+  const command = await cli($);
+  if (!command) return { deny: "ayaito is not installed in this project." };
+  const { runId, node, message } = e;
+  if (typeof runId !== "string" || typeof node !== "string" || typeof message !== "string" || message.trim() === "") {
+    return { deny: "Pass runId, node and message." };
+  }
+  const argv = [...command, "steer", "--store", dir, "--", runId, node, message];
+  const { exitCode, stdout, stderr } = await $.process.run(argv);
+
+  return exitCode === 0 ? { result: stdout.trim() } : { deny: stderr.trim() || stdout.trim() };
 }
 
 /** Tells Claude of each run that ended since the last look. */

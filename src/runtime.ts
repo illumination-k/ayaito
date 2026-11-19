@@ -56,6 +56,16 @@ export interface AgentRequest<T = undefined> {
   /** Resumes an earlier call (its AgentResult.sessionId) with its history, instead of a new one. */
   sessionId?: string;
   signal?: AbortSignal;
+  /** Called once the session of the call is known, which is before the call ends. */
+  onSession?: (sessionId: string) => void;
+  /** Called during the call with what the agent says and the tools it calls, for showing its progress. */
+  onActivity?: (activity: Activity) => void;
+}
+
+/** A step of an agent at work: a message of its own, or with tool, a call of that tool and its input in short. */
+export interface Activity {
+  tool?: string;
+  text: string;
 }
 
 /** What a call cost, as far as the runtime reports it. */
@@ -135,6 +145,12 @@ export function defineRuntime(adapter: {
     },
     close: () => adapter.close?.() ?? Promise.resolve(),
   };
+}
+
+/** A tool's input in short, as the text of an Activity. */
+export function brief(input: unknown, max = 300): string {
+  const text = typeof input === "string" ? input : (JSON.stringify(input) ?? "");
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 /** Claude Code rejects the $schema that 2020-12 output carries; the schema is valid without it. */

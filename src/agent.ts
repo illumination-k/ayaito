@@ -1,10 +1,12 @@
 import type { Context, Node } from "./node.ts";
 import { refine, type RefineResult, type Verdict } from "./refine.ts";
+import type { Sent } from "./steer.ts";
 import {
   type Access,
   type AgentRequest,
   type AgentResult,
   type AgentRuntime,
+  brief,
   InterruptedError,
   OutputError,
   type OutputSchema,
@@ -67,9 +69,16 @@ export function refineNode<I, O, T>(
   return {
     name,
     shape: { kind: "agent" },
-    run: async (input, ctx) =>
-      refine({
-        runtime: metered(runtime, name, ctx),
+    run: async (input, ctx) => {
+      const { steer } = ctx;
+      // The agent is reached by its node's name, inside forEach also as name#item, and by its session's id.
+      let listener: ((sent: Sent) => void) | undefined;
+      const offs: (() => void)[] = [];
+      const listen = (address: string) => {
+        if (steer && listener) offs.push(steer.listen(address, listener));
+      };
+      return refine({
+        runtime: metered(runtime, name, ctx, listen),
         request: { ...request, cwd: request.cwd ?? ctx.cwd, prompt: prompt(input), node: name, signal: ctx.signal },
         check: async (result, attempt) => {
           const verdict = await check(result, input, attempt);
@@ -79,13 +88,31 @@ export function refineNode<I, O, T>(
         maxAttempts,
         wrapUp: ctx.wrapUp,
         onWrapUp: () => ctx.emit({ type: "wrapUp", node: name }),
-      }),
+        steer:
+          steer &&
+          ((heard) => {
+            listener = heard;
+            listen(name);
+            if (ctx.item !== undefined) listen(`${name}#${ctx.item}`);
+            return () => {
+              listener = undefined;
+              for (const off of offs) off();
+            };
+          }),
+        onSteer: (message) => ctx.emit({ type: "steer", node: name, message }),
+        onStop: () => ctx.emit({ type: "wrapUp", node: name, stopped: true }),
+      });
+    },
   };
 }
 
-/** Records the usage of every call (an interrupted one too), and a schema miss as a retry. */
-function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntime {
+// An activity keeps this much of a message: events are for following the work, not for keeping it.
+const SHOWN = 1000;
+
+/** Records the usage of every call (an interrupted one too), a schema miss as a retry, the session and what the agent does. */
+function metered(runtime: AgentRuntime, node: string, ctx: Context, onSession: (id: string) => void): AgentRuntime {
   let calls = 0;
+  const sessions = new Set<string>();
   const usage = ({ costUsd, models }: Usage) => {
     if (costUsd !== undefined || models) ctx.emit({ type: "usage", node, usd: costUsd, models: models ?? {} });
   };
@@ -95,7 +122,17 @@ function metered(runtime: AgentRuntime, node: string, ctx: Context): AgentRuntim
     async run<T>(request: AgentRequest<T>) {
       calls++;
       try {
-        const result = await runtime.run(request);
+        const result = await runtime.run({
+          ...request,
+          onSession: (sessionId) => {
+            if (sessions.has(sessionId)) return;
+            sessions.add(sessionId);
+            ctx.emit({ type: "session", node, sessionId });
+            onSession(sessionId);
+          },
+          onActivity: ({ tool, text }) =>
+            ctx.emit({ type: "activity", node, ...(tool !== undefined && { tool }), text: brief(text, SHOWN) }),
+        });
         usage(result);
         return result;
       } catch (error) {

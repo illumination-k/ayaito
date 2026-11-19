@@ -78,6 +78,20 @@ describe("claudeRuntime", () => {
     });
   });
 
+  it("reports what the agent says and the tools it calls", async () => {
+    const assistant = (content: unknown[]) =>
+      ({ type: "assistant", session_id: "s1", message: { content } }) as unknown as SDKMessage;
+    const query = async function* (): AsyncGenerator<SDKMessage> {
+      yield assistant([{ type: "thinking", thinking: "hm" }]);
+      yield assistant([{ type: "text", text: "I will look." }]);
+      yield assistant([{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "a.ts" } }]);
+      yield result({});
+    };
+    const seen: unknown[] = [];
+    await claudeRuntime({}, query).run({ prompt: "", onActivity: (activity) => seen.push(activity) });
+    expect(seen).toEqual([{ text: "I will look." }, { tool: "Read", text: '{"file_path":"a.ts"}' }]);
+  });
+
   it("interrupts the turn on abort and reports the session and its usage", async () => {
     let interrupted = false;
     const query = () => {

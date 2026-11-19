@@ -204,6 +204,13 @@ describe("acpRuntime", () => {
     expect(error).toMatchObject({ sessionId: "s1", usage: { costUsd: 0.1 } });
   });
 
+  it("reports each message and tool call as the turn goes", async () => {
+    const { runtime } = fakeAgent([{ says: ["I will look.", "It is done."] }]);
+    const seen: unknown[] = [];
+    await runtime.run({ prompt: "go", onActivity: (activity) => seen.push(activity) });
+    expect(seen).toEqual([{ text: "I will look." }, { tool: "tool", text: "tool" }, { text: "It is done." }]);
+  });
+
   it("cancels the turn when the signal aborts", async () => {
     const { runtime } = fakeAgent([{ says: [], hangs: true }]);
     const controller = new AbortController();

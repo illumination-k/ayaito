@@ -5,7 +5,14 @@ type On = Parameters<TestBody>[1];
 
 /** Stands for the project: its files, the processes started in it, and what was said to Claude. */
 const project = (on: On, files: Record<string, string>) => {
-  const world = { files, started: [] as string[][], killed: [] as string[], said: [] as string[], alive: true };
+  const world = {
+    files,
+    started: [] as string[][],
+    steered: [] as string[][],
+    killed: [] as string[],
+    said: [] as string[],
+    alive: true,
+  };
   const name = (path: string) => Object.keys(files).find((file) => path.endsWith(file));
   on("fs.exists", (_, e) => ({ value: name(e.path) !== undefined }));
   on("fs.read", (_, e) => {
@@ -24,6 +31,14 @@ const project = (on: On, files: Record<string, string>) => {
     if (e.argv[0] === "sh") {
       world.started.push(e.argv.slice(3));
       return done(0, "4242\n");
+    }
+    if (e.argv[1] === "stop") {
+      world.steered.push(e.argv);
+      return done(0, "Told.\n");
+    }
+    if (e.argv[1] === "steer") {
+      world.steered.push(e.argv);
+      return e.argv.at(-2) === "plan" ? done(0, "Sent.\n") : { value: { ...done(1).value, stderr: "not running" } };
     }
     if (e.argv[1] === "-0") return done(world.alive ? 0 : 1);
     world.killed.push(e.argv[1] ?? "");
@@ -109,4 +124,29 @@ test("without ayaito in the project the run tool says how to install it", async 
 
   expect(answer.isError).toBe(true);
   expect(answer.text).toMatch(/npm install ayaito/);
+});
+
+test("the steer tool passes the message to the run through the CLI and says why it could not", async ($, on) => {
+  const world = project(on, { ...INSTALLED });
+  await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+
+  const sent = await $.tool.call({ tool: "mcp__ayaito__steer", runId: "r1", node: "plan", message: "-- fewer tasks" });
+  expect(sent.result).toBe("Sent.");
+  expect(world.steered).toEqual([
+    ["node_modules/.bin/ayaito", "steer", "--store", ".runs", "--", "r1", "plan", "-- fewer tasks"],
+  ]);
+
+  const refused = await $.tool.call({ tool: "mcp__ayaito__steer", runId: "r1", node: "fix", message: "stop" });
+  expect(refused.isError).toBe(true);
+  expect(refused.text).toMatch(/not running/);
+  expect((await $.tool.call({ tool: "mcp__ayaito__steer", runId: "r1", node: "plan" })).text).toMatch(/Pass runId/);
+});
+
+test("the stop tool with a node stops only its agent, through the CLI", async ($, on) => {
+  const world = project(on, { ...INSTALLED });
+  await $.session.start({ cwd: "/", surface: "desktop", isInteractive: true });
+
+  expect((await $.tool.call({ tool: "mcp__ayaito__stop", runId: "r1", node: "plan" })).result).toBe("Told.");
+  expect(world.steered).toEqual([["node_modules/.bin/ayaito", "stop", "--store", ".runs", "--", "r1", "plan"]]);
+  expect(world.killed).toEqual([]);
 });

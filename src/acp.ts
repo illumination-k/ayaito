@@ -19,7 +19,14 @@ import {
 } from "@agentclientprotocol/sdk/unstable";
 
 import type { Tokens } from "./node.ts";
-import { type Access, type AgentRuntime, defineRuntime, InterruptedError, OutputError } from "./runtime.ts";
+import {
+  type Access,
+  type Activity,
+  type AgentRuntime,
+  defineRuntime,
+  InterruptedError,
+  OutputError,
+} from "./runtime.ts";
 
 export interface AcpRuntimeOptions {
   /** The agent to start, which speaks ACP on its stdio. */
@@ -51,6 +58,13 @@ interface Session {
   afterTool: boolean;
   /** The cost of the session so far, as the agent reports it. */
   costUsd?: number;
+  /** The onActivity of the call in progress. */
+  onActivity?: (activity: Activity) => void;
+}
+
+/** Reports the message so far, once: before the tool call that follows it, or when the turn ends. */
+function said(session: Session) {
+  if (!session.afterTool && session.text.trim() !== "") session.onActivity?.({ text: session.text });
 }
 
 /**
@@ -76,7 +90,9 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
         session.afterTool = false;
         session.text += update.content.text;
       } else if (update.sessionUpdate === "tool_call") {
+        said(session);
         session.afterTool = true;
+        session.onActivity?.({ tool: update.kind ?? "tool", text: update.title });
       } else if (update.sessionUpdate === "usage_update" && update.cost?.currency === "USD") {
         session.costUsd = update.cost.amount;
       } else if (update.sessionUpdate === "config_option_update") {
@@ -177,6 +193,8 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
 
       session.text = "";
       session.afterTool = false;
+      request.onSession?.(sessionId);
+      session.onActivity = request.onActivity;
       const costBefore = session.costUsd ?? 0;
       let models: Record<string, Tokens> | undefined;
       const cancel = () => void agent.notify(methods.agent.session.cancel, { sessionId }).catch(() => {});
@@ -186,6 +204,7 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
           sessionId,
           prompt: [{ type: "text", text: prompt }],
         });
+        said(session);
         if (stopReason === "cancelled" && request.signal?.aborted) {
           const costUsd = session.costUsd === undefined ? undefined : session.costUsd - costBefore;
           throw new InterruptedError(sessionId, request.signal.reason, { costUsd });
@@ -204,6 +223,7 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
           };
         }
       } finally {
+        session.onActivity = undefined;
         request.signal?.removeEventListener("abort", cancel);
       }
 
