@@ -124,6 +124,11 @@ laid over the graph to show what is running, done or failed.
 `graphSchema` is the [JSON Schema](https://json-schema.org/) of that graph, to check one or to generate types
 in another language: `JSON.stringify(graphSchema)`.
 
+### In Claude Code
+
+`run` saves the graph as `graph.json` beside `events.jsonl`. The mod in [`mods/ayaito`](mods/ayaito) reads both
+and shows the run on its graph in a pane beside the chat, live: `claude --plugin-dir mods/ayaito`, then `/ayaito`.
+
 ## Development
 
 Uses [Vite+](https://viteplus.dev/).

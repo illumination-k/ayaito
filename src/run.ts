@@ -1,4 +1,5 @@
 import { type Budget, limitSpend, spentIn } from "./limits.ts";
+import { toGraph } from "./graph.ts";
 import { type Context, type Node, type RunEvent, Stop, type Store, type Tokens } from "./node.ts";
 
 /** "stopped" when a node threw Stop: the run ended early, as a success. */
@@ -44,6 +45,8 @@ export async function run<I, O>(
       pending = pending.then(() => opts.store.append(opts.runId, event));
     },
   };
+  // The graph is saved with the run, so that a viewer can lay events.jsonl over it.
+  await opts.store.put(opts.runId, "graph", toGraph(node));
   const limited = opts.budget && limitSpend(base, opts.budget, node.name, spentIn(await opts.store.events(opts.runId)));
   const ctx = limited?.ctx ?? base;
   try {

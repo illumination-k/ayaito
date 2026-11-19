@@ -120,3 +120,9 @@ const { nodes, edges } = toGraph(flow);
 
 `graphSchema` はこのグラフの [JSON Schema](https://json-schema.org/) で、検証や他言語での型生成に使える
 （`JSON.stringify(graphSchema)`）。
+
+### Claude Code で見る
+
+`run` はグラフを `graph.json` として `events.jsonl` の隣に保存する。[`mods/ayaito`](mods/ayaito) の mod は両方を読み、
+チャットの横のペインに実行状況をグラフ上で表示する（実行中も追従する）。`claude --plugin-dir mods/ayaito` で起動し、
+`/ayaito` で開く。

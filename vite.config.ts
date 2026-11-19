@@ -15,7 +15,12 @@ export default defineConfig({
     },
     exports: true,
   },
+  test: {
+    // The mod's tests run in Claude Code: claude plugin test mods/ayaito
+    exclude: ["mods/**", "node_modules/**", "dist/**"],
+  },
   lint: {
+    ignorePatterns: ["mods/**"],
     options: {
       typeAware: true,
       typeCheck: true,
