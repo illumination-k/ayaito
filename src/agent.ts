@@ -69,7 +69,7 @@ export function refineNode<I, O, T>(
     run: async (input, ctx) =>
       refine({
         runtime: metered(runtime, name, ctx),
-        request: { ...request, prompt: prompt(input), node: name, signal: ctx.signal },
+        request: { ...request, cwd: request.cwd ?? ctx.cwd, prompt: prompt(input), node: name, signal: ctx.signal },
         check: async (result, attempt) => {
           const verdict = await check(result, input, attempt);
           if (!verdict.ok) ctx.emit({ type: "retry", node: name, attempt, error: verdict.feedback });

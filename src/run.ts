@@ -1,3 +1,4 @@
+import { type Budget, limitSpend, spentIn } from "./limits.ts";
 import { type Context, type Node, type RunEvent, Stop, type Store, type Tokens } from "./node.ts";
 
 /** "stopped" when a node threw Stop: the run ended early, as a success. */
@@ -9,16 +10,26 @@ export type RunResult<O> = { costUsd: number; events: RunEvent[] } & (
 /**
  * Runs a node (usually a built flow) as runId. Running the same runId again resumes it:
  * nodes behind a checkpoint edge return their saved output. Aborting signal cancels the run.
+ * A budget aborts the run with BudgetError once its agents spend more, counting what earlier
+ * attempts of the run spent. cwd is the directory agent nodes without one of their own run in.
  */
 export async function run<I, O>(
   node: Node<I, O>,
   input: I,
-  opts: { runId: string; store: Store; log?: (event: RunEvent) => void; signal?: AbortSignal },
+  opts: {
+    runId: string;
+    store: Store;
+    log?: (event: RunEvent) => void;
+    signal?: AbortSignal;
+    budget?: Budget;
+    cwd?: string;
+  },
 ): Promise<RunResult<O>> {
   const events: RunEvent[] = [];
   let pending = Promise.resolve();
-  const ctx: Context = {
+  const base: Context = {
     runId: opts.runId,
+    cwd: opts.cwd,
     store: opts.store,
     signal: opts.signal ?? new AbortController().signal,
     history: async () => {
@@ -33,11 +44,14 @@ export async function run<I, O>(
       pending = pending.then(() => opts.store.append(opts.runId, event));
     },
   };
+  const limited = opts.budget && limitSpend(base, opts.budget, node.name, spentIn(await opts.store.events(opts.runId)));
+  const ctx = limited?.ctx ?? base;
   try {
+    ctx.signal.throwIfAborted();
     const output = await node.run(input, ctx);
     return { status: "done", output, costUsd: totalCost(events), events };
   } catch (error) {
-    if (!(error instanceof Stop)) throw error;
+    if (!(error instanceof Stop)) throw limited?.exceeded() ?? error;
     const stopped = { node: error.node ?? node.name, reason: error.message };
     return { status: "stopped", ...stopped, costUsd: totalCost(events), events };
   } finally {

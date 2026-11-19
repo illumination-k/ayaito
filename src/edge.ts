@@ -23,7 +23,8 @@ export function retry(opts: { attempts: number; delayMs?: number }): Middleware 
       try {
         return await next(input, ctx);
       } catch (error) {
-        if (attempt >= opts.attempts) throw error;
+        // A cancelled run, a sibling that failed, a timeout or a spent budget: trying again cannot help.
+        if (attempt >= opts.attempts || ctx.signal.aborted) throw error;
         ctx.emit({ type: "retry", node: node.name, attempt, error: String(error) });
         await new Promise((r) => setTimeout(r, (opts.delayMs ?? 0) * attempt));
       }

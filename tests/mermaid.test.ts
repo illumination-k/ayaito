@@ -4,14 +4,19 @@ import { z } from "zod";
 import {
   agentNode,
   assign,
+  branch,
+  budget,
   checkpoint,
   defineRuntime,
   fnNode,
   Flow,
+  forEach,
   parallel,
   retry,
+  timeout,
   toMermaid,
   until,
+  worktree,
 } from "../src/index.ts";
 
 const noRuntime = defineRuntime({ name: "none", run: async () => ({ text: "", sessionId: "" }) });
@@ -77,6 +82,46 @@ describe("toMermaid", () => {
 
     expect(toMermaid(flow)).toContain('  in -->|"checkpoint"| n2');
     expect(toMermaid(flow)).toContain('subgraph s1["inner"]');
+  });
+
+  it("draws branch as a choice, forEach as a subgraph and a worktree on its node", () => {
+    const plan = agentNode("plan", { prompt: () => "", output: z.array(z.string()) }, noRuntime);
+    const fix = agentNode("fix", { prompt: (task: string) => task, output: z.string() }, noRuntime);
+    const flow = Flow.start<string>("ship")
+      .then(plan, { use: [budget({ usd: 2 })] })
+      .then(forEach("fix each", worktree(fix), { concurrency: 3, use: [checkpoint, timeout(600_000)] }))
+      .then(
+        branch("all fixed?", (fixes: readonly unknown[]) => (fixes.length > 0 ? "yes" : "no"), {
+          yes: fnNode("open PR", async () => "pr"),
+          no: fnNode("report", async () => "none"),
+        }),
+      )
+      .build();
+
+    expect(toMermaid(flow)).toBe(
+      [
+        "flowchart TD",
+        "  in((input))",
+        '  subgraph s0["ship"]',
+        '    n1(["plan"]):::agent',
+        '    subgraph s2["fix each (each item, 3 at a time)"]',
+        '      n3(["fix (worktree)"]):::agent',
+        "    end",
+        '    c4{"all fixed?"}',
+        '    n5["open PR"]',
+        '    n6["report"]',
+        "  end",
+        "  out((output))",
+        '  in -->|"budget $2"| n1',
+        '  n1 -->|"checkpoint, timeout 10m"| n3',
+        "  n3 --> c4",
+        '  c4 -->|"yes"| n5',
+        '  c4 -->|"no"| n6',
+        "  n5 --> out",
+        "  n6 --> out",
+        "  classDef agent fill:#ede9fe,stroke:#7c3aed",
+      ].join("\n"),
+    );
   });
 
   it("draws a node without a shape as code and escapes quotes", () => {
