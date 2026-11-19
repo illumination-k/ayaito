@@ -1,3 +1,7 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
@@ -11,7 +15,9 @@ import {
   Flow,
   forEach,
   graphSchema,
+  FsStore,
   parallel,
+  run,
   toGraph,
   toMermaid,
   until,
@@ -118,5 +124,15 @@ describe("toGraph", () => {
     expect(new Set(nodes.flatMap((n) => Object.keys(n)))).toEqual(new Set(Object.keys(node.properties)));
     expect(new Set(edges.flatMap((e) => Object.keys(e)))).toEqual(new Set(Object.keys(edge.properties)));
     expect(JSON.parse(JSON.stringify(graphSchema))).toEqual(graphSchema);
+  });
+
+  it("is saved with a run as graph.json, beside the events", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ayaito-"));
+    const flow = Flow.start<number>("f")
+      .then(fnNode("a", async (n: number) => n))
+      .build();
+    await run(flow, 1, { runId: "r", store: new FsStore(dir) });
+
+    expect(JSON.parse(await readFile(join(dir, "r", "graph.json"), "utf8"))).toEqual(toGraph(flow));
   });
 });

@@ -24,6 +24,9 @@
     "type": "git",
     "url": "git+https://github.com/illumination-k/ayaito.git"
   },
+  "bin": {
+    "ayaito": "./dist/cli.mjs"
+  },
   "files": [
     "dist"
   ],
@@ -32,6 +35,7 @@
     ".": "./dist/index.mjs",
     "./acp": "./dist/acp.mjs",
     "./claude": "./dist/claude.mjs",
+    "./cli": "./dist/cli.mjs",
     "./codex": "./dist/codex.mjs",
     "./opencode": "./dist/opencode.mjs",
     "./package.json": "./package.json"

@@ -1,0 +1,7 @@
+{
+  "name": "ayaito",
+  "version": "0.1.0",
+  "description": "A pane that shows an ayaito run on its flow's graph: what is running, done or failed, and what it cost.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
