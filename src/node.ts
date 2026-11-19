@@ -30,8 +30,13 @@ export interface Step {
   use: string[];
 }
 
-/** What a run records about its nodes, in order. */
-export type RunEvent =
+/**
+ * What a run records about its nodes, in order. item is set for what happens inside forEach:
+ * the index of the item it is for ("2"; inside a forEach in a forEach, "0.2").
+ */
+export type RunEvent = { item?: string } & NodeEvent;
+
+type NodeEvent =
   | { type: "start"; node: string; at: string }
   | { type: "end"; node: string; at: string; ms: number }
   | { type: "skip"; node: string; at: string; reason: string }
@@ -43,6 +48,8 @@ export type RunEvent =
    * or with stopped, it was told to stop (steer's stop).
    */
   | { type: "wrapUp"; node: string; at: string; stopped?: true }
+  /** An agent's call runs in this session: resume it to go on from its work, or send it a message by this id. */
+  | { type: "session"; node: string; at: string; sessionId: string }
   /** What an agent said, or with tool, a tool it called and the input in short. */
   | { type: "activity"; node: string; at: string; tool?: string; text: string }
   /** A message sent to the agent while it worked (run's steer) reached its session. */
@@ -80,6 +87,8 @@ export interface Context {
    * turn and asks the same session for its answer with prompt, instead of being cut off.
    */
   readonly wrapUp?: { readonly signal: AbortSignal; readonly prompt: string };
+  /** Inside forEach: the index of the item this node runs for ("2"; nested, "0.2"). */
+  readonly item?: string;
   /** run's steer: agent nodes listen to it for messages sent to them while they work. */
   readonly steer?: Steer;
 }

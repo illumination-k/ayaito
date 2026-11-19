@@ -88,7 +88,7 @@ describe("ayaito", () => {
     while (!(await events()).includes('"start","node":"research"')) await new Promise((r) => setTimeout(r, 20));
     expect(await cli("steer", "r", "f", "hello", ...store)).toMatchObject({
       code: 1,
-      stderr: expect.stringContaining('no agent node "f". Its agent nodes: research'),
+      stderr: expect.stringContaining('no agent node or session "f". Its agent nodes: research'),
     });
     expect((await cli("steer", "r", "research", "Only", "the open ones.", ...store)).stdout).toContain("Sent to");
 

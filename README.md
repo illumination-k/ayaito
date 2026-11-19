@@ -64,6 +64,9 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   `steer.send(node, message)` interrupts the turn of that node's agent and gives the message to the same session,
   which then goes on with its task (a `steer` event). It is no new attempt. `send` returns `false` when no agent
   of the node is working. Only agent nodes can be reached; the tool call in progress is cut off.
+  In a `forEach`, `fix#2` reaches the agent of item 2 (the index in the list; `fix` alone reaches all of them),
+  and events inside it carry `item`. An agent can be reached by its session's id too: a `session` event has it as
+  soon as the call starts, which also lets you resume the session yourself.
   `steer.stop(node)` ends an agent's work without failing the node: it is interrupted and asked for its answer
   from what it has done so far (a `wrapUp` event with `stopped`), and `refineNode` makes no attempt after it.
 - `branch`'s cases must cover every key the function can return, checked by the type. Annotate the function's

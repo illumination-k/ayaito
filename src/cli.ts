@@ -19,6 +19,8 @@ const USAGE = `ayaito run <flow file> [--run-id <id>] [--store <dir>] [--input <
 ayaito steer <run id> <node> <message> [--store <dir>]
   Sends a message to the agent of a node of a run that \`ayaito run\` is running: its turn is interrupted,
   it reads the message and goes on with its task. What the agents do is in the run's events.jsonl.
+  <node> is the node's name, name#item for the agent of one item of a forEach (fix#2), or the id of
+  the agent's session (the session events have it).
 
 ayaito stop <run id> [<node>] [--store <dir>]
   Stops a run that \`ayaito run\` is running; its checkpoints stay, so the same run id resumes it. With a
@@ -85,17 +87,29 @@ async function order(store: FsStore, runId: string, sent: Order): Promise<number
     console.log(`Told run ${runId} to stop. Running it again with the same run id resumes it.`);
     return 0;
   }
+  const events = await store.events(runId);
+  // The address is a session's id, or a node's name, with #item for the one of a forEach item.
+  const session = events.find((e) => e.type === "session" && e.sessionId === node);
+  const [name = node, item] = session ? [session.node, session.item] : node.split("#");
   const agents = graph.nodes.filter((n) => n.kind === "agent").map((n) => n.name);
-  if (!agents.includes(node)) {
-    throw new Error(`Run ${runId} has no agent node "${node}". Its agent nodes: ${agents.join(", ") || "none"}.`);
+  if (!agents.includes(name)) {
+    throw new Error(
+      `Run ${runId} has no agent node or session "${node}". Its agent nodes: ${agents.join(", ") || "none"}.`,
+    );
   }
+  let started = 0;
   let running = 0;
-  for (const e of await store.events(runId)) {
-    if (e.node !== node) continue;
-    if (e.type === "start") running++;
-    else if (e.type === "end" || e.type === "error") running--;
+  for (const e of events) {
+    if (e.node !== name || (item !== undefined && e.item !== item)) continue;
+    if (e.type === "start") {
+      running++;
+      started++;
+    } else if (e.type === "end" || e.type === "error") running--;
   }
-  if (running <= 0) throw new Error(`"${node}" is not running in run ${runId}: only an agent at work can be reached.`);
+  // A node that is run by itself, not in a flow, records no start: it cannot be told.
+  if (running <= 0 && (started > 0 || item !== undefined)) {
+    throw new Error(`"${node}" is not running in run ${runId}: only an agent at work can be reached.`);
+  }
   await appendFile(steerFile(store, runId), `${JSON.stringify(sent)}\n`);
   console.log(
     "stop" in sent

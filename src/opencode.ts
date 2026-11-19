@@ -54,6 +54,7 @@ export function opencodeRuntime(options: OpencodeRuntimeOptions = {}): AgentRunt
         ? await client.session.update({ sessionID: request.sessionId, directory, permission }, { throwOnError: true })
         : await client.session.create({ directory, agent: options.agent, permission }, { throwOnError: true });
       const sessionID = session.data.id;
+      request.onSession?.(sessionID);
       const abort = () => void client.session.abort({ sessionID, directory });
       request.signal?.addEventListener("abort", abort, { once: true });
       try {

@@ -76,6 +76,7 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
       request.signal?.addEventListener("abort", stop, { once: true });
       try {
         for await (const message of turn) {
+          if (sessionId === undefined && message.session_id) request.onSession?.(message.session_id);
           sessionId ??= message.session_id;
           if (message.type === "result") result = message;
           else if (message.type === "assistant" && request.onActivity) {

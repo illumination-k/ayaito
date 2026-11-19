@@ -46,6 +46,7 @@ export function codexRuntime({ thread, ...base }: CodexRuntimeOptions = {}): Age
         workingDirectory: request.cwd,
       };
       const t = request.sessionId ? codex.resumeThread(request.sessionId, options) : codex.startThread(options);
+      if (t.id) request.onSession?.(t.id);
       // What Thread.run does, with the items reported as they come.
       const turn: { finalResponse: string; usage: Usage | null } = { finalResponse: "", usage: null };
       try {
@@ -54,6 +55,7 @@ export function codexRuntime({ thread, ...base }: CodexRuntimeOptions = {}): Age
           signal: request.signal,
         });
         for await (const event of events) {
+          if (event.type === "thread.started") request.onSession?.(event.thread_id);
           if (event.type === "turn.failed") throw new Error(event.error.message);
           if (event.type === "turn.completed") turn.usage = event.usage;
           if (event.type !== "item.started" && event.type !== "item.completed") continue;

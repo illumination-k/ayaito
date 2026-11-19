@@ -158,7 +158,10 @@ export function forEach<T, O>(
       const worker = async () => {
         while (next < items.length) {
           const i = next++;
-          outputs[i] = await run(items[i] as T, inner);
+          // Each item's events carry its index, and its agents can be reached by it.
+          const item = ctx.item === undefined ? String(i) : `${ctx.item}.${i}`;
+          const emit: Context["emit"] = (event) => inner.emit({ item, ...event });
+          outputs[i] = await run(items[i] as T, { ...inner, item, emit });
         }
       };
       try {

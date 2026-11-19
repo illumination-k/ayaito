@@ -19,8 +19,10 @@ export type Graph = {
 
 /** A line of ayaito's events.jsonl. */
 export type RunEvent = {
-  type: "start" | "end" | "skip" | "retry" | "error" | "stop" | "wrapUp" | "usage" | "activity" | "steer";
+  type: "start" | "end" | "skip" | "retry" | "error" | "stop" | "wrapUp" | "usage" | "activity" | "steer" | "session";
   node: string;
+  /** Inside a forEach: the index of the item the event is for. */
+  item?: string;
   ms?: number;
   attempt?: number;
   error?: string;
@@ -62,6 +64,8 @@ export function fold(events: RunEvent[]): Map<string, NodeState> {
   };
   for (const e of events) {
     const state = of(e.node);
+    // Which of a forEach's agents the line is about.
+    const who = e.item === undefined ? "" : `#${e.item} `;
     switch (e.type) {
       case "start":
         state.running++;
@@ -89,13 +93,13 @@ export function fold(events: RunEvent[]): Map<string, NodeState> {
         state.usd += e.usd ?? 0;
         break;
       case "activity":
-        state.activity = line(e.tool === undefined ? (e.text ?? "") : `${e.tool} ${e.text ?? ""}`);
+        state.activity = line(who + (e.tool === undefined ? (e.text ?? "") : `${e.tool} ${e.text ?? ""}`));
         break;
       case "wrapUp":
-        if (e.stopped) state.activity = "← stop";
+        if (e.stopped) state.activity = `${who}← stop`;
         break;
       case "steer":
-        state.activity = line(`← ${e.message ?? ""}`);
+        state.activity = line(`${who}← ${e.message ?? ""}`);
         break;
       case "stop":
         // The flows around the node that stopped record nothing more: the run is over.

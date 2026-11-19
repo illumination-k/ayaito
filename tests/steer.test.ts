@@ -9,6 +9,7 @@ import {
   agentNode,
   defineRuntime,
   Flow,
+  forEach,
   FsStore,
   InterruptedError,
   type RawRequest,
@@ -174,6 +175,54 @@ describe("steering", () => {
     expect(events.filter((e) => e.type === "wrapUp")).toEqual([
       expect.objectContaining({ node: "research", stopped: true }),
     ]);
+  });
+
+  it("reaches one agent of a forEach by its item, or any agent by its session", async () => {
+    // Each agent works in a session named after its prompt, until it is told something.
+    const told: Record<string, string> = {};
+    let begun = () => {};
+    const runtime = defineRuntime({
+      name: "fake",
+      run: async ({ prompt, sessionId, signal, onSession }) => {
+        if (sessionId !== undefined) {
+          told[sessionId] = prompt;
+          return { text: "", sessionId, structured: { found: 1 } };
+        }
+        onSession?.(`s-${prompt}`);
+        begun();
+        return new Promise<never>((_, reject) =>
+          signal?.addEventListener("abort", () => reject(new InterruptedError(`s-${prompt}`, signal.reason))),
+        );
+      },
+    });
+    const each = forEach("fix each", agentNode("fix", { prompt: (task: string) => task, output }, runtime));
+    const steer = steering();
+    const working = new Promise<void>((resolve) => {
+      let count = 0;
+      begun = () => ++count === 3 && resolve();
+    });
+    const running = run(Flow.start<string[]>("f").then(each).build(), ["a", "b", "c"], {
+      runId: "r",
+      store: await tmpStore(),
+      steer,
+    });
+    await working;
+    expect(steer.send("fix#3", "nobody")).toBe(false);
+    steer.send("fix#1", "to b");
+    steer.send("s-c", "to c");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(Object.keys(told)).toEqual(["s-b", "s-c"]);
+    steer.stop("fix");
+
+    const { events } = await running;
+    expect(told).toEqual({ "s-b": steerPrompt(["to b"]), "s-c": steerPrompt(["to c"]), "s-a": STOP_PROMPT });
+    expect(events.filter((e) => e.type === "session").map((e) => [e.item, e.sessionId])).toEqual([
+      ["0", "s-a"],
+      ["1", "s-b"],
+      ["2", "s-c"],
+    ]);
+    expect(events.filter((e) => e.type === "start" && e.node === "fix").map((e) => e.item)).toEqual(["0", "1", "2"]);
+    expect(events.find((e) => e.type === "steer" && e.message === "to b")).toMatchObject({ node: "fix", item: "1" });
   });
 
   it("records what the agent says and the tools it calls", async () => {

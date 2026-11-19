@@ -56,6 +56,8 @@ export interface AgentRequest<T = undefined> {
   /** Resumes an earlier call (its AgentResult.sessionId) with its history, instead of a new one. */
   sessionId?: string;
   signal?: AbortSignal;
+  /** Called once the session of the call is known, which is before the call ends. */
+  onSession?: (sessionId: string) => void;
   /** Called during the call with what the agent says and the tools it calls, for showing its progress. */
   onActivity?: (activity: Activity) => void;
 }

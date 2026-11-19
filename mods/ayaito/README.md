@@ -21,7 +21,8 @@ another folder, and `/ayaito <dir> <runId>` stays on one run. The pane follows t
 | `■`  | the run stopped here (`Stop`)                               |
 
 Under an agent that is running, a dim line has the last thing it said or the tool it called, or after `←` a
-message that was sent to it (`← stop` when it was told to stop).
+message that was sent to it (`← stop` when it was told to stop). In a `forEach` the line starts with the item
+it is about (`#2`).
 
 Nodes are matched to events by name, so two nodes with the same name show the same state. A run made with an
 ayaito that saves no `graph.json` (0.2.0 and earlier) cannot be shown.
@@ -44,7 +45,8 @@ words: "run an ayaito flow that plans the fixes, fixes each in its own worktree 
   one.
 - `mcp__ayaito__steer` sends a message to an agent of a run while it works: the agent's turn is interrupted, it
   reads the message and goes on. Claude can follow what the agents do in the run's `events.jsonl` and correct one
-  that goes wrong, without stopping the run. Ask for it in words: "tell the fix agent to leave the tests alone".
+  that goes wrong, without stopping the run. An agent is named by its node, by `name#item` in a `forEach`
+  (`fix#2`), or by its session id. Ask for it in words: "tell the fix agent to leave the tests alone".
 - The project needs `ayaito` installed (`node_modules/.bin/ayaito`), `zod`, and the SDK of the runtime the
   flow's agents use. The flow is run by Node, which strips its types (Node 22.18 or later) and does not check
   them. Starting a run needs `sh`, so not Windows.

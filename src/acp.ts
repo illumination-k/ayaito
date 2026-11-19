@@ -193,6 +193,7 @@ export function acpRuntime(options: AcpRuntimeOptions, connect: Connect = (app) 
 
       session.text = "";
       session.afterTool = false;
+      request.onSession?.(sessionId);
       session.onActivity = request.onActivity;
       const costBefore = session.costUsd ?? 0;
       let models: Record<string, Tokens> | undefined;

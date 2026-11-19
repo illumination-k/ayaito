@@ -62,7 +62,10 @@ export const STOP_SPEC = {
     required: ["runId"],
     properties: {
       runId: { type: "string" },
-      node: { type: "string", description: "The name of an agent node, to stop only its agent." },
+      node: {
+        type: "string",
+        description: "To stop only an agent: its node's name, name#item in a forEach, or its session id.",
+      },
     },
   },
 } as const;
@@ -70,13 +73,13 @@ export const STOP_SPEC = {
 export const STEER_SPEC = {
   name: "steer",
   description:
-    "Sends a message to an agent of a run while it works: its turn is interrupted, it reads the message and goes on with its task. Use it to correct or redirect an agent that is going wrong, without stopping the run. `node` is the name of an agent node that is running now. To see what the agents are doing, read the end of <runs dir>/<runId>/events.jsonl: its activity lines have what each agent said and the tools it called, and a steer line appears when the agent got the message.",
+    "Sends a message to an agent of a run while it works: its turn is interrupted, it reads the message and goes on with its task. Use it to correct or redirect an agent that is going wrong, without stopping the run. `node` is the name of an agent node that is running now; in a forEach, where one node has an agent per item, `name#item` (fix#2) reaches the agent of that item and the bare name all of them; the id of an agent's session reaches that agent too. To see what the agents are doing, read the end of <runs dir>/<runId>/events.jsonl: its session lines have each agent's session id, its activity lines what each agent said and the tools it called (with `item` inside a forEach), and a steer line appears when the agent got the message.",
   inputSchema: {
     type: "object",
     required: ["runId", "node", "message"],
     properties: {
       runId: { type: "string" },
-      node: { type: "string", description: "The name of the agent node, as in the flow." },
+      node: { type: "string", description: "The agent node's name, name#item in a forEach, or a session id." },
       message: { type: "string", description: "What to tell the agent." },
     },
   },
