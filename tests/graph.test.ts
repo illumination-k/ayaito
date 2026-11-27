@@ -4,7 +4,21 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
-import { assign, checkpoint, effect, fnNode, Flow, FsStore, parallel, retry, run, Stop, until } from "../src/index.ts";
+import {
+  assign,
+  checkpoint,
+  checkpointBy,
+  checkpointKey,
+  effect,
+  fnNode,
+  Flow,
+  FsStore,
+  parallel,
+  retry,
+  run,
+  Stop,
+  until,
+} from "../src/index.ts";
 
 const tmpStore = async () => new FsStore(await mkdtemp(join(tmpdir(), "ayaito-")));
 
@@ -61,6 +75,63 @@ describe("Flow", () => {
 
     const log = await readFile(join(store.dir, "r", "events.jsonl"), "utf8");
     expect(log).toContain('"type":"error"');
+  });
+
+  it("checkpointBy skips a node whose key is the same though its input changed", async () => {
+    const store = await tmpStore();
+    let calls = 0;
+    const review = fnNode("review", async (s: { round: number; topic: string }) => {
+      calls++;
+      return `${s.topic}!`;
+    });
+    const flow = Flow.start<{ round: number; topic: string }>("f")
+      .then(review, { use: [checkpointBy((s: { topic: string }) => s.topic)] })
+      .build();
+
+    expect((await run(flow, { round: 1, topic: "a" }, { runId: "r", store })).output).toBe("a!");
+    const { output, events } = await run(flow, { round: 2, topic: "a" }, { runId: "r", store });
+    expect(output).toBe("a!");
+    expect(calls).toBe(1);
+    expect(events.some((e) => e.type === "skip" && e.node === "review")).toBe(true);
+    expect(await store.get("r", checkpointKey("review", "a"))).toEqual({
+      input: { round: 1, topic: "a" },
+      output: "a!",
+    });
+  });
+
+  it("checkpointBy runs the node again when a key outside the input changes", async () => {
+    const store = await tmpStore();
+    let calls = 0;
+    let tree = "t1";
+    const agent = fnNode("agent", async (n: number) => {
+      calls++;
+      return n + 1;
+    });
+    const flow = Flow.start<number>("f")
+      .then(agent, { use: [checkpointBy(async (n: number) => ({ n, tree }))] })
+      .build();
+
+    await run(flow, 1, { runId: "r", store });
+    await run(flow, 1, { runId: "r", store });
+    expect(calls).toBe(1);
+    tree = "t2";
+    const { events } = await run(flow, 1, { runId: "r", store });
+    expect(calls).toBe(2);
+    expect(events.some((e) => e.type === "skip")).toBe(false);
+  });
+
+  it("checkpoint keys by the whole input as before", async () => {
+    const store = await tmpStore();
+    // An entry saved under the key checkpoint has always used resumes.
+    expect(checkpointKey("double", { n: 2 })).toBe("double.363379742f80");
+    await store.put("r", "double.363379742f80", { input: { n: 2 }, output: 99 });
+    const double = fnNode("double", async (x: { n: number }) => x.n * 2);
+    const flow = Flow.start<{ n: number }>("f")
+      .then(double, { use: [checkpoint] })
+      .build();
+
+    expect((await run(flow, { n: 2 }, { runId: "r", store })).output).toBe(99);
+    expect((await run(flow, { n: 3 }, { runId: "r", store })).output).toBe(6);
   });
 
   it("retries and runs side effects", async () => {
