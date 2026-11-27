@@ -1,6 +1,6 @@
 {
   "name": "ayaito",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex, opencode, Antigravity (agy) or any ACP agent.",
   "keywords": [
     "acp",

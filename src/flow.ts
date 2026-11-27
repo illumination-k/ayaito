@@ -133,13 +133,19 @@ export function branch<I, K extends string, C extends Record<K, Node<I, unknown>
  * returns their outputs in the order of the items: the tasks a planning agent listed, one
  * worker each. Each item runs through the middleware (a checkpoint keeps the items that
  * finished when another fails), and the first to fail aborts the others.
+ *
+ * With failFast: false, a failure aborts nothing and does not stop the queue: every item runs
+ * to its end, and then, if any failed, an AggregateError is thrown whose errors are theirs, in
+ * the order of the items, each with the index of its item as `item`. With checkpoint in use,
+ * a rerun runs only the failed items. Cancelling the run still aborts every item.
  */
 export function forEach<T, O>(
   name: string,
   node: Node<T, O>,
-  opts: { concurrency?: number; use?: Middleware[] } = {},
+  opts: { concurrency?: number; failFast?: boolean; use?: Middleware[] } = {},
 ): Node<readonly T[], O[]> {
   const { concurrency } = opts;
+  const failFast = opts.failFast ?? true;
   if (concurrency !== undefined && !(concurrency >= 1)) throw new Error(`${name}: concurrency must be at least 1`);
   const run = wrap(node, opts.use ?? []);
   return {
@@ -148,12 +154,13 @@ export function forEach<T, O>(
       kind: "forEach",
       body: node,
       concurrency,
+      ...(!failFast && { failFast }),
       use: (opts.use ?? []).map(middlewareName),
     },
     run: async (items, ctx) => {
       const abort = new AbortController();
       const inner: Context = { ...ctx, signal: AbortSignal.any([ctx.signal, abort.signal]) };
-      const outputs: O[] = Array.from({ length: items.length });
+      const results: PromiseSettledResult<O>[] = Array.from({ length: items.length });
       let next = 0;
       const worker = async () => {
         while (next < items.length) {
@@ -161,12 +168,24 @@ export function forEach<T, O>(
           // Each item's events carry its index, and its agents can be reached by it.
           const item = ctx.item === undefined ? String(i) : `${ctx.item}.${i}`;
           const emit: Context["emit"] = (event) => inner.emit({ item, ...event });
-          outputs[i] = await run(items[i], { ...inner, item, emit });
+          const output = run(items[i], { ...inner, item, emit });
+          if (failFast) results[i] = { status: "fulfilled", value: await output };
+          else {
+            results[i] = await output.then(
+              (value) => ({ status: "fulfilled", value }),
+              (reason: unknown) => ({ status: "rejected", reason }),
+            );
+          }
         }
       };
+      const workers = Array.from({ length: Math.min(concurrency ?? items.length, items.length) }, worker);
+      if (!failFast) {
+        await Promise.all(workers);
+        return settle(name, results, (i) => ({ item: i }), ctx.signal) as O[];
+      }
       try {
-        await Promise.all(Array.from({ length: Math.min(concurrency ?? items.length, items.length) }, worker));
-        return outputs;
+        await Promise.all(workers);
+        return results.map((r) => (r as PromiseFulfilledResult<O>).value);
       } catch (error) {
         abort.abort(error);
         throw error;
@@ -231,28 +250,43 @@ async function allSettled(
   ctx: Context,
 ): Promise<Record<string, unknown>> {
   const results = await Promise.allSettled(runs.map(([, run]) => run(input, ctx)));
-  // The run was cancelled (a stop, a timeout, a spent budget): that is why the nodes failed.
-  ctx.signal.throwIfAborted();
-  const outputs: Record<string, unknown> = {};
-  const errors: (Error & { key: string })[] = [];
-  let stop: Stop | undefined;
-  for (const [i, result] of results.entries()) {
-    const key = runs[i][0];
-    if (result.status === "fulfilled") outputs[key] = result.value;
-    else if (result.reason instanceof Stop) stop ??= result.reason;
-    else errors.push(withKey(result.reason, key));
-  }
-  if (errors.length > 0) {
-    const list = errors.map((e) => `${e.key}: ${e.message}`).join("; ");
-    throw new AggregateError(errors, `${name}: ${errors.length} of ${runs.length} failed (${list})`);
-  }
-  // No node failed, and one found nothing to do: the run ends early, as with failFast.
-  if (stop) throw stop;
-  return outputs;
+  const values = settle(name, results, (i) => ({ key: runs[i][0] }), ctx.signal);
+  return Object.fromEntries(runs.map(([key], i) => [key, values[i]]));
 }
 
-/** The error a node of parallel threw, with the key of the node; what is not an Error is wrapped in one. */
-function withKey(error: unknown, key: string): Error & { key: string } {
+/** What a failed member of parallel (its key) or forEach (its index) was. */
+type Label = { key: string } | { item: number };
+
+/**
+ * The outputs of members that all ran to their end (parallel or forEach without failFast),
+ * or an AggregateError with every failure, in order, each with what `label` says it was.
+ */
+function settle(
+  name: string,
+  results: PromiseSettledResult<unknown>[],
+  label: (i: number) => Label,
+  signal: AbortSignal,
+): unknown[] {
+  // The run was cancelled (a stop, a timeout, a spent budget): that is why the members failed.
+  signal.throwIfAborted();
+  const errors: (Error & Label)[] = [];
+  let stop: Stop | undefined;
+  for (const [i, result] of results.entries()) {
+    if (result.status === "fulfilled") continue;
+    if (result.reason instanceof Stop) stop ??= result.reason;
+    else errors.push(labelled(result.reason, label(i)));
+  }
+  if (errors.length > 0) {
+    const list = errors.map((e) => `${"key" in e ? e.key : e.item}: ${e.message}`).join("; ");
+    throw new AggregateError(errors, `${name}: ${errors.length} of ${results.length} failed (${list})`);
+  }
+  // None failed, and one found nothing to do: the run ends early, as with failFast.
+  if (stop) throw stop;
+  return results.map((r) => (r as PromiseFulfilledResult<unknown>).value);
+}
+
+/** A member's error with its label; what is not an Error is wrapped in one. */
+function labelled<L extends object>(error: unknown, label: L): Error & L {
   const e = error instanceof Error && Object.isExtensible(error) ? error : new Error(String(error), { cause: error });
-  return Object.assign(e, { key });
+  return Object.assign(e, label);
 }

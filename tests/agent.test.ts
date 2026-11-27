@@ -10,6 +10,7 @@ import {
   defineRuntime,
   exec,
   FsStore,
+  type Node,
   type RawRequest,
   type RawResult,
   refine,
@@ -101,6 +102,55 @@ describe("agentNode", () => {
     );
     expect(costUsd).toBe(0);
     expect(usageReport(await store.events("r"))).toContain("| c | 1 | 10 | 2,000 | 30,000 | 4,000 | - |");
+  });
+});
+
+describe("agentNode without output", () => {
+  /** A runtime whose answer is text only, as a call without a schema gets. */
+  function texted(text: string) {
+    const seen: RawRequest[] = [];
+    const runtime = defineRuntime({
+      name: "texted",
+      run: async (request) => {
+        seen.push(request);
+        request.onSession?.("s1");
+        request.onActivity?.({ text: "reviewing" });
+        return { text, sessionId: "s1", costUsd: 0.2 };
+      },
+    });
+    return { runtime, seen };
+  }
+
+  it("returns the agent's text, sends no schema and reports as an agent node", async () => {
+    const { runtime, seen } = texted("LGTM");
+    const node = agentNode("review", { prompt: (pr: number) => `/review ${pr}` }, runtime);
+    const { output, events, costUsd } = await run(node, 7, { runId: "r", store: await tmpStore() });
+
+    const typed: Node<number, string> = node;
+    expect(typed).toBe(node);
+    expect(output).toBe("LGTM");
+    expect(node.shape).toEqual({ kind: "agent" });
+    expect(seen[0]).toMatchObject({ prompt: "/review 7", node: "review" });
+    expect(seen[0]?.outputSchema).toBeUndefined();
+    expect(costUsd).toBe(0.2);
+    expect(events).toContainEqual(expect.objectContaining({ type: "session", node: "review", sessionId: "s1" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "activity", node: "review", text: "reviewing" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "usage", node: "review", usd: 0.2 }));
+  });
+
+  it("gives refineNode's check the text", async () => {
+    const { runtime } = texted("done");
+    const node = refineNode(
+      "review",
+      {
+        prompt: () => "review",
+        check: (r) => (r.text === "done" ? { ok: true, value: r.text.length } : { ok: false, feedback: "again" }),
+        maxAttempts: 1,
+      },
+      runtime,
+    );
+    const { output } = await run(node, 0, { runId: "r", store: await tmpStore() });
+    expect(output).toEqual({ ok: true, value: 4, attempts: 1, sessionId: "s1" });
   });
 });
 

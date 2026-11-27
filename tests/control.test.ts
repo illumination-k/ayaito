@@ -146,6 +146,116 @@ describe("forEach", () => {
   });
 });
 
+describe("forEach with failFast: false", () => {
+  const failure = async (promise: Promise<unknown>) => {
+    const error = await promise.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    return error as AggregateError;
+  };
+
+  it("lets a slow item finish when another fails at once, then fails with its index", async () => {
+    let aborted = false;
+    const events: string[] = [];
+    const item = fnNode("item", async (n: number, ctx) => {
+      if (n === 0) throw new Error("boom");
+      await sleep(20);
+      aborted = ctx.signal.aborted;
+      return n;
+    });
+
+    const error = await failure(
+      run(forEach("each", item, { failFast: false }), [0, 1], {
+        runId: "r",
+        store: await tmpStore(),
+        log: (e) => events.push(`${e.type} ${e.item}`),
+      }),
+    );
+
+    expect(aborted).toBe(false);
+    expect(events).toContain("end 1");
+    expect(error.errors).toHaveLength(1);
+    expect(error.errors[0]).toMatchObject({ item: 0, message: "boom" });
+    expect(error.message).toBe("each: 1 of 2 failed (0: boom)");
+  });
+
+  it("goes on with the queue after a failure, and collects the failures in item order", async () => {
+    const ran: number[] = [];
+    const item = fnNode("item", async (n: number) => {
+      if (n % 2 === 1) throw new Error(`odd ${n}`);
+      ran.push(n);
+      return n;
+    });
+
+    const error = await failure(
+      run(forEach("each", item, { concurrency: 1, failFast: false }), [1, 2, 3, 4], {
+        runId: "r",
+        store: await tmpStore(),
+      }),
+    );
+
+    expect(ran).toEqual([2, 4]);
+    expect(error.errors.map((e: { item: number }) => e.item)).toEqual([0, 2]);
+  });
+
+  it("reruns only the failed items, the others return from their checkpoints", async () => {
+    const store = await tmpStore();
+    const ran: number[] = [];
+    let down = true;
+    const item = fnNode("item", async (n: number) => {
+      if (n === 2 && down) throw new Error("unreachable");
+      await sleep(5);
+      ran.push(n);
+      return n * 10;
+    });
+    const each = forEach("each", item, { failFast: false, use: [checkpoint] });
+
+    const error = await failure(run(each, [1, 2, 3], { runId: "r", store }));
+    expect(error.errors.map((e: { item: number }) => e.item)).toEqual([1]);
+    expect(ran.toSorted((a, b) => a - b)).toEqual([1, 3]);
+
+    down = false;
+    const { output, events } = await run(each, [1, 2, 3], { runId: "r", store });
+
+    expect(output).toEqual([10, 20, 30]);
+    expect(ran.toSorted((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(events.filter((e) => e.type === "skip").map((e) => e.item).toSorted((a, b) => Number(a) - Number(b))).toEqual(["0", "2"]); // prettier-ignore
+  });
+
+  it("aborts every item when the run is cancelled, and fails with the reason", async () => {
+    const abort = new AbortController();
+    const aborted: number[] = [];
+    const item = fnNode("item", async (n: number, ctx) => {
+      await new Promise((resolve) => ctx.signal.addEventListener("abort", resolve, { once: true }));
+      aborted.push(n);
+      throw ctx.signal.reason;
+    });
+    setTimeout(() => abort.abort(new Error("cancelled")), 10);
+
+    const error = await run(forEach("each", item, { failFast: false }), [1, 2], {
+      runId: "r",
+      store: await tmpStore(),
+      signal: abort.signal,
+    }).catch((e: unknown) => e);
+
+    expect(aborted.toSorted((a, b) => a - b)).toEqual([1, 2]);
+    expect(error).toMatchObject({ message: "cancelled" });
+    expect(error).not.toBeInstanceOf(AggregateError);
+  });
+
+  it("returns the same output as the default when every item succeeds", async () => {
+    const square = fnNode("square", async (n: number) => n * n);
+
+    const kept = await run(forEach("each", square, { failFast: false }), [1, 2, 3], { runId: "a", store: await tmpStore() }); // prettier-ignore
+    const fast = await run(forEach("each", square), [1, 2, 3], { runId: "b", store: await tmpStore() });
+
+    expect(kept.output).toEqual([1, 4, 9]);
+    expect(kept.output).toEqual(fast.output);
+  });
+});
+
 describe("budget", () => {
   it("aborts a node once it spends more than its budget", async () => {
     let calls = 0;
@@ -180,7 +290,7 @@ describe("budget", () => {
     });
     const node = refineNode(
       "refine",
-      { prompt: () => "", output: undefined as never, check: () => ({ ok: false, feedback: "again" }), maxAttempts: 5 },
+      { prompt: () => "", output: undefined, check: () => ({ ok: false, feedback: "again" }), maxAttempts: 5 },
       defineRuntime({ name: "plain", run: (r) => runtime.run({ ...r, output: undefined }) }),
     );
     const flow = Flow.start<number>("f")

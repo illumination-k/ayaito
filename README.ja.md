@@ -32,13 +32,13 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 
 | 部品                         | 役割                                                                                                                                                                                             |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                                                      |
+| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力。`output` がなければ最後のテキスト）・`refineNode`（検査で判定するエージェント）                                   |
 | `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`）・`agyRuntime`（`ayaito/agy`） |
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
 | middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす。`checkpointBy(key)` は `key(input, ctx)` のハッシュを使う）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`            |
 | `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                                                 |
 | `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）。`failFast: false` なら、1 つが失敗してもほかは最後まで走る                                             |
-| `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                                                  |
+| `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）。`failFast: false` は `parallel` と同じ                                          |
 | `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                                                    |
 | `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                                                     |
 | `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー・エージェントの動き）の保存                                                                                        |
@@ -53,6 +53,8 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   `AggregateError` を投げる（`errors` は失敗したノードのエラーで、それぞれ `key` を持つ）。`use: [checkpoint]` と
   組み合わせると、成功したノードの出力は残り、同じ run ID で走らせ直すと失敗したノードだけが走る
   （長くて高価なエージェントの実行向け）。実行を止めたときは、すべてのノードを止める
+- `forEach(name, node, { failFast: false })` も同じように、すべての項目を最後まで走らせる（`concurrency` は
+  そのまま効き、失敗しても残りの項目は始まる）。`AggregateError` の `errors` は、項目の添字を `item` に持つ
 - edge の `budget({ usd, tokens })` はノードの、`run(..., { budget })` は実行全体の支出を制限する（再開した実行は
   それまでの分も数える）。超えると signal を止めて `BudgetError` を投げる。呼び出しは終わるときに使用量を報告するので、
   超えた呼び出しは最後まで走る。`timeout(ms)` はノードを止めて `TimeoutError` を投げる。`retry` の内側なら各回、
@@ -91,7 +93,8 @@ opencode のサーバー、ACP のエージェントのコマンド）。`access
 JSON Schema にしてエージェントに渡し、答えをそれで検証する。
 
 - `agentNode` は検証済みの出力を返す。スキーマに合わない答えは同じセッションに返し、`attempts` 回
-  （既定 1）まで呼ぶ。それでも合わなければ例外にする
+  （既定 1）まで呼ぶ。それでも合わなければ例外にする。`output` を省くとエージェントの最後のテキストを返し
+  （`Node<I, string>`）、`refineNode` の `check` は `result.text` を読む
 - `refineNode` は `check(result, input, attempt, ctx)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
   `{ ok: true, value }` か `{ ok: false, feedback }` を返す。feedback は同じセッションに返し、`maxAttempts` 回まで呼ぶ。
   ノードの出力は `RefineResult` で、使い切っても例外にせず結果（`{ ok: false, feedback }`）として返すので、
