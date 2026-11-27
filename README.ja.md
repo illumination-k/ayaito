@@ -141,9 +141,14 @@ const { nodes, edges } = toGraph(flow);
 
 ### コマンドラインから
 
-`ayaito run flow.ts` はファイルが default export するフローを実行し、`.runs/<run id>/` に保存する（結果は
+`ayaito run flow.ts` はファイルが default export するフローを実行し、`<store>/<run id>/` に保存する（結果は
 `result.json`）。`ayaito graph flow.ts` はグラフを JSON で出力する（`--mermaid` で flowchart）。`.ts` は Node が
 型を取り除いて実行する（22.18 以降）。
+
+`--store` を省くと、保存先は作業ツリーの外になる。git リポジトリ内ならその git common dir
+（`git rev-parse --git-common-dir`）の `ayaito-runs` で、`git status` に出ず、すべての worktree から同じ実行が
+見える。git の外なら `$XDG_STATE_HOME/ayaito/runs`（`~/.local/state/ayaito/runs`）。0.2.0 以前の保存先
+`./.runs` にすでにある実行は、そこから読む。
 
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
