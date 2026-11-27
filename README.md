@@ -30,20 +30,20 @@ const result = await run(flow, input, { runId, store: new FsStore(".runs") });
 if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`);
 ```
 
-| Part                           | Role                                                                                                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output), `refineNode` (an agent judged by a check)                                                                   |
-| `AgentRuntime`                 | Where agents run: `claudeRuntime` (`ayaito/claude`), `codexRuntime` (`ayaito/codex`), `opencodeRuntime` (`ayaito/opencode`), `acpRuntime` (`ayaito/acp`), `agyRuntime` (`ayaito/agy`) |
-| `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                                        |
-| middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun), `retry`, `effect` (side effects), `timeout`, `budget`                                                |
-| `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                          |
-| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails           |
-| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed); `failFast: false` as in `parallel`             |
-| `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                               |
-| `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                                        |
-| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                                                |
-| `Stop`                         | Thrown by a node that finds nothing to do: the run ends early as a success (`status: "stopped"`)                                                                                      |
-| `exec`                         | Runs a command and returns its exit code as the result, for gates such as tests                                                                                                       |
+| Part                           | Role                                                                                                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output), `refineNode` (an agent judged by a check)                                                                          |
+| `AgentRuntime`                 | Where agents run: `claudeRuntime` (`ayaito/claude`), `codexRuntime` (`ayaito/codex`), `opencodeRuntime` (`ayaito/opencode`), `acpRuntime` (`ayaito/acp`), `agyRuntime` (`ayaito/agy`)        |
+| `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                                               |
+| middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun; `checkpointBy(key)` hashes `key(input, ctx)` instead), `retry`, `effect` (side effects), `timeout`, `budget` |
+| `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                                 |
+| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails                  |
+| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed); `failFast: false` as in `parallel`                    |
+| `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                                      |
+| `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                                               |
+| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                                                       |
+| `Stop`                         | Thrown by a node that finds nothing to do: the run ends early as a success (`status: "stopped"`)                                                                                             |
+| `exec`                         | Runs a command and returns its exit code as the result, for gates such as tests                                                                                                              |
 
 - Rerunning with the same run ID returns the saved output of nodes with `checkpoint`. A node whose input
   changed because an earlier node ran again runs again. To redo from a given node, use `store.invalidate`.
@@ -92,16 +92,21 @@ An agent node's request is portable: `prompt`, `output`, `system`, `model`, `cwd
 `allowedTools`, `permissionMode`, `maxBudgetUsd` or in-process `mcpTools`, Codex's thread options, an opencode
 server, the command of an ACP agent. A request's `access` replaces the tools and permissions the runtime was made with.
 
+Claude's `env` goes over the inherited environment, and the session of a Claude Code that runs the flow is
+always left out, so that calls do not share it. To give flow agents their own login, set `CLAUDE_CONFIG_DIR` or
+`CLAUDE_CODE_OAUTH_TOKEN` there: `claudeRuntime({ env: { CLAUDE_CONFIG_DIR: dir } })`.
+
 `output` is any schema that implements [Standard Schema](https://standardschema.dev/) with JSON Schema (zod
 4.2+). It goes to the agent as JSON Schema, and the answer is validated against it.
 
 - `agentNode` returns the validated output. An answer that misses the schema goes back to the same session,
   up to `attempts` calls (default 1); then the node throws.
-- `refineNode` adds `check(result, input, attempt)`, a deterministic judge (a quote the source does not contain,
+- `refineNode` adds `check(result, input, attempt, ctx)`, a deterministic judge (a quote the source does not contain,
   a test that fails) that returns `{ ok: true, value }` or `{ ok: false, feedback }`. Feedback goes back to the
   same session, up to `maxAttempts` calls. The node's output is the `RefineResult`: running out of attempts is a
   result (`{ ok: false, feedback }`), not an error, so a later node can record what never passed. `refine`
-  does the same outside a flow.
+  does the same outside a flow. `ctx` is the node's context: pass `ctx.signal` to what `check` starts
+  (`exec(cmd, args, { signal: ctx.signal })`), so that stopping the run stops it too.
 - Codex needs every object strict (`z.strictObject`). Do not use tuples (the Claude CLI validates with draft-07
   and the API with 2020-12, and one of them rejects them).
 - `acpRuntime({ command, args })` starts an ACP agent as a child process and shares it between calls. `access`
@@ -147,9 +152,14 @@ in another language: `JSON.stringify(graphSchema)`.
 
 ### From the command line
 
-`ayaito run flow.ts` runs the flow a file exports as default and saves the run under `.runs/<run id>/`, with the
+`ayaito run flow.ts` runs the flow a file exports as default and saves the run under `<store>/<run id>/`, with the
 result as `result.json`; `ayaito graph flow.ts` prints its graph as JSON (`--mermaid` for a flowchart). Node
 runs a `.ts` file by stripping its types (22.18 or later).
+
+Without `--store`, the store is outside the working tree: `ayaito-runs` in the repository's git common dir
+(`git rev-parse --git-common-dir`), so that runs never show in `git status` and every worktree of the
+repository sees the same ones; outside git, `$XDG_STATE_HOME/ayaito/runs` (`~/.local/state/ayaito/runs`). A
+run that is already in `./.runs`, where 0.2.0 and earlier kept them, is still found there.
 
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run

@@ -35,7 +35,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                                                      |
 | `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`）・`agyRuntime`（`ayaito/agy`） |
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
-| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                                                       |
+| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす。`checkpointBy(key)` は `key(input, ctx)` のハッシュを使う）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`            |
 | `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                                                 |
 | `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）。`failFast: false` なら、1 つが失敗してもほかは最後まで走る                                             |
 | `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）。`failFast: false` は `parallel` と同じ                                          |
@@ -94,10 +94,11 @@ JSON Schema にしてエージェントに渡し、答えをそれで検証す�
 
 - `agentNode` は検証済みの出力を返す。スキーマに合わない答えは同じセッションに返し、`attempts` 回
   （既定 1）まで呼ぶ。それでも合わなければ例外にする
-- `refineNode` は `check(result, input, attempt)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
+- `refineNode` は `check(result, input, attempt, ctx)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
   `{ ok: true, value }` か `{ ok: false, feedback }` を返す。feedback は同じセッションに返し、`maxAttempts` 回まで呼ぶ。
   ノードの出力は `RefineResult` で、使い切っても例外にせず結果（`{ ok: false, feedback }`）として返すので、
-  後ろのノードで通らなかったものを記録できる。フローの外では `refine` で同じことをする
+  後ろのノードで通らなかったものを記録できる。フローの外では `refine` で同じことをする。`ctx` はノードのコンテキストで、
+  `check` が起動するもの（`exec(cmd, args, { signal: ctx.signal })`）に `ctx.signal` を渡せば、実行を止めたときに一緒に止まる
 - Codex ではオブジェクトをすべて strict にする（`z.strictObject`）。タプルは使わない（Claude の CLI は draft-07、
   API は 2020-12 で検証し、どちらかで落ちる）
 - `acpRuntime({ command, args })` は ACP のエージェントを子プロセスとして起動し、呼び出しの間で共有する。`access` は
@@ -143,9 +144,14 @@ const { nodes, edges } = toGraph(flow);
 
 ### コマンドラインから
 
-`ayaito run flow.ts` はファイルが default export するフローを実行し、`.runs/<run id>/` に保存する（結果は
+`ayaito run flow.ts` はファイルが default export するフローを実行し、`<store>/<run id>/` に保存する（結果は
 `result.json`）。`ayaito graph flow.ts` はグラフを JSON で出力する（`--mermaid` で flowchart）。`.ts` は Node が
 型を取り除いて実行する（22.18 以降）。
+
+`--store` を省くと、保存先は作業ツリーの外になる。git リポジトリ内ならその git common dir
+（`git rev-parse --git-common-dir`）の `ayaito-runs` で、`git status` に出ず、すべての worktree から同じ実行が
+見える。git の外なら `$XDG_STATE_HOME/ayaito/runs`（`~/.local/state/ayaito/runs`）。0.2.0 以前の保存先
+`./.runs` にすでにある実行は、そこから読む。
 
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する

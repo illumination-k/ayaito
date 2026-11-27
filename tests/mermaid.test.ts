@@ -7,10 +7,12 @@ import {
   branch,
   budget,
   checkpoint,
+  checkpointBy,
   defineRuntime,
   fnNode,
   Flow,
   forEach,
+  named,
   parallel,
   retry,
   timeout,
@@ -70,6 +72,29 @@ describe("toMermaid", () => {
         "  classDef agent fill:#ede9fe,stroke:#7c3aed",
       ].join("\n"),
     );
+  });
+
+  it("draws checkpointBy as checkpoint unless named", () => {
+    const flow = Flow.start<number>("f")
+      .then(
+        fnNode("a", async (n: number) => n),
+        { use: [checkpointBy((n) => n)] },
+      )
+      .then(
+        fnNode("b", async (n: number) => n),
+        {
+          use: [
+            named(
+              "checkpoint by topic",
+              checkpointBy((n) => n),
+            ),
+          ],
+        },
+      )
+      .build();
+
+    expect(toMermaid(flow)).toContain('|"checkpoint"|');
+    expect(toMermaid(flow)).toContain('|"checkpoint by topic"|');
   });
 
   it("draws a nested flow as a subgraph and keeps the edge into it", () => {

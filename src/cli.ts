@@ -1,12 +1,15 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { appendFile, readFile, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { toGraph } from "./graph.ts";
 import { toMermaid } from "./mermaid.ts";
 import type { Node } from "./node.ts";
+import { exec } from "./exec.ts";
 import { run } from "./run.ts";
 import { steering } from "./steer.ts";
 import { FsStore } from "./store.ts";
@@ -15,6 +18,9 @@ const USAGE = `ayaito run <flow file> [--run-id <id>] [--store <dir>] [--input <
   Runs the flow the file exports as default, and saves the run under <store>/<run id>/:
   events.jsonl, graph.json and, when it ends, result.json. Running the same run id again resumes it.
   Without --input, the input is the file's export named input.
+  Without --store, the store is ayaito-runs in the git common dir of the repository the current
+  directory is in (shared by all its worktrees), or else $XDG_STATE_HOME/ayaito/runs
+  (~/.local/state/ayaito/runs). A run that is in ./.runs, where runs were kept before, stays there.
 
 ayaito steer <run id> <node> <message> [--store <dir>]
   Sends a message to the agent of a node of a run that \`ayaito run\` is running: its turn is interrupted,
@@ -119,12 +125,30 @@ async function order(store: FsStore, runId: string, sent: Order): Promise<number
   return 0;
 }
 
+/** Where runs were kept before the default moved out of the working tree. */
+const LEGACY_STORE = ".runs";
+
+/**
+ * The store when no --store is given: under the git common dir, so that it is outside every
+ * worktree, never tracked and shared by all of them; outside git, the XDG state dir. A run
+ * that is already in ./.runs is found there, so that it can still be resumed, steered and stopped.
+ */
+async function defaultStore(runId: string): Promise<string> {
+  if (existsSync(join(LEGACY_STORE, runId))) return LEGACY_STORE;
+  const git = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"]).catch(() => undefined);
+  const common = git?.code === 0 ? git.stdout.trim() : "";
+  if (common !== "") return join(common, "ayaito-runs");
+  // The spec says to ignore a relative XDG_STATE_HOME.
+  const state = process.env.XDG_STATE_HOME;
+  return join(state && isAbsolute(state) ? state : join(homedir(), ".local", "state"), "ayaito", "runs");
+}
+
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
       "run-id": { type: "string" },
-      store: { type: "string", default: ".runs" },
+      store: { type: "string" },
       input: { type: "string" },
       "input-file": { type: "string" },
       mermaid: { type: "boolean", default: false },
@@ -138,8 +162,9 @@ async function main(): Promise<number> {
     console.error(USAGE);
     return values.help ? 0 : 2;
   }
-  if (isStop) return order(new FsStore(values.store), file, { node, stop: true });
-  if (isSteer) return order(new FsStore(values.store), file, { node, message: words.join(" ") });
+  const storeOf = async (runId: string) => new FsStore(values.store ?? (await defaultStore(runId)));
+  if (isStop) return order(await storeOf(file), file, { node, stop: true });
+  if (isSteer) return order(await storeOf(file), file, { node, message: words.join(" ") });
   const { flow, input } = await load(file);
 
   if (command === "graph") {
@@ -149,7 +174,7 @@ async function main(): Promise<number> {
 
   const text = values["input-file"] === undefined ? values.input : await readFile(values["input-file"], "utf8");
   const runId = values["run-id"] ?? `${flow.name.replaceAll(/[^\w.-]+/g, "-")}-${Date.now().toString(36)}`;
-  const store = new FsStore(values.store);
+  const store = await storeOf(runId);
   const abort = new AbortController();
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => abort.abort(new Error(signal)));
 

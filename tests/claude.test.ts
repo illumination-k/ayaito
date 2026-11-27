@@ -129,6 +129,19 @@ describe("claudeRuntime", () => {
     expect(seen[0]?.options?.env?.PATH).toBe(process.env.PATH);
   });
 
+  it("keeps the session out when options set env, over the inherited environment", async () => {
+    const seen: { prompt: string; options?: Options }[] = [];
+    process.env.CLAUDE_CODE_SESSION_ID = "parent";
+    try {
+      await claudeRuntime({ env: { ...process.env, X: "1" } }, fakeQuery(result({}), seen)).run({ prompt: "" });
+    } finally {
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+    }
+    expect(seen[0]?.options?.env).toHaveProperty("CLAUDE_CODE_SESSION_ID", undefined);
+    expect(seen[0]?.options?.env?.X).toBe("1");
+    expect(seen[0]?.options?.env?.PATH).toBe(process.env.PATH);
+  });
+
   it("throws when the agent fails", async () => {
     const failed = claudeRuntime({}, fakeQuery(result({ subtype: "error_max_budget_usd", errors: ["over budget"] })));
     await expect(failed.run({ prompt: "" })).rejects.toThrow("claude: error_max_budget_usd: over budget");

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,15 @@ const cli = (...args: string[]) =>
   promisify(execFile)(process.execPath, [resolve("src/cli.ts"), ...args]).catch(
     (error: { code: number; stdout: string; stderr: string }) => error,
   );
+
+/** The CLI run in cwd, with its state dir in state, and git told to look no further than tmpdir. */
+const cliIn = (cwd: string, state: string, ...args: string[]) =>
+  promisify(execFile)(process.execPath, [resolve("src/cli.ts"), ...args], {
+    cwd,
+    env: { ...process.env, XDG_STATE_HOME: state, GIT_CEILING_DIRECTORIES: tmpdir() },
+  });
+
+const git = (cwd: string, ...args: string[]) => promisify(execFile)("git", args, { cwd });
 
 const flowFile = async (dir: string, body: string) => {
   const file = join(dir, "flow.ts");
@@ -141,5 +150,53 @@ describe("ayaito", () => {
     const failed = (await whole) as { code: number; stdout: string };
     expect(failed.code).toBe(1);
     expect(JSON.parse(failed.stdout)).toMatchObject({ status: "failed", error: expect.stringContaining("stopped") });
+  });
+
+  describe("without --store", () => {
+    const body = `export const input: number = 1;
+      export default Flow.start<number>("f").then(fnNode("double", async (n: number) => n * 2)).build();`;
+    const result = (dir: string, runId: string) => readFile(join(dir, runId, "result.json"), "utf8").then(JSON.parse);
+
+    it("keeps runs under the git common dir, the same from every worktree", async () => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), "ayaito-")));
+      const repo = join(root, "repo");
+      const state = join(root, "state");
+      await mkdir(repo);
+      await git(repo, "init", "-q");
+      await git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init");
+      await git(repo, "worktree", "add", "-q", join(root, "wt"));
+      const file = await flowFile(root, body);
+      const store = join(repo, ".git", "ayaito-runs");
+
+      await cliIn(repo, state, "run", file, "--run-id", "main");
+      expect(await result(store, "main")).toMatchObject({ status: "done", output: 2 });
+      await cliIn(join(root, "wt"), state, "run", file, "--run-id", "linked");
+      expect(await result(store, "linked")).toMatchObject({ status: "done", output: 2 });
+      // Nothing for git status to show.
+      expect((await git(repo, "status", "--porcelain")).stdout).toBe("");
+    });
+
+    it("keeps runs in the XDG state dir outside git", async () => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), "ayaito-")));
+      const state = join(root, "state");
+      const file = await flowFile(root, body);
+
+      await cliIn(root, state, "run", file, "--run-id", "a");
+      expect(await result(join(state, "ayaito", "runs"), "a")).toMatchObject({ status: "done", output: 2 });
+    });
+
+    it("finds a run that is in ./.runs there, and uses --store as given", async () => {
+      const root = await realpath(await mkdtemp(join(tmpdir(), "ayaito-")));
+      const state = join(root, "state");
+      const file = await flowFile(root, body);
+      await mkdir(join(root, ".runs", "old"), { recursive: true });
+
+      await cliIn(root, state, "run", file, "--run-id", "old");
+      expect(await result(join(root, ".runs"), "old")).toMatchObject({ status: "done" });
+      await cliIn(root, state, "run", file, "--run-id", "new");
+      expect(await result(join(state, "ayaito", "runs"), "new")).toMatchObject({ status: "done" });
+      await cliIn(root, state, "run", file, "--run-id", "given", "--store", "out");
+      expect(await result(join(root, "out"), "given")).toMatchObject({ status: "done" });
+    });
   });
 });
