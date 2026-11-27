@@ -26,6 +26,14 @@ export default defineConfig({
   test: {
     // The mod's tests run in Claude Code: claude plugin test mods/ayaito
     exclude: ["mods/**", "node_modules/**", "dist/**", ".stryker-tmp/**", "reports/**"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**"],
+      // The CLI's tests run it in a child process, which v8 coverage does not see.
+      exclude: ["src/cli.ts"],
+      reporter: ["text", "html"],
+      reportsDirectory: "reports/coverage",
+    },
   },
   lint: {
     ignorePatterns: ["mods/**", "dist/**", ".stryker-tmp/**", "reports/**"],

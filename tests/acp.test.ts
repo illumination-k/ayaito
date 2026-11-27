@@ -24,6 +24,8 @@ interface Turn {
   asks?: ToolKind;
   /** The cost of the session after the turn. */
   cost?: number;
+  currency?: string;
+  stopReason?: "end_turn" | "max_tokens" | "refusal";
   usage?: Usage;
   /** Waits for session/cancel instead of answering. */
   hangs?: boolean;
@@ -68,6 +70,12 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}, options:
       record(() => ({})),
     )
     .onRequest(
+      methods.agent.session.load,
+      record((): never => {
+        throw new Error("no such session");
+      }),
+    )
+    .onRequest(
       methods.agent.session.setConfigOption,
       record(() => ({ configOptions })),
     )
@@ -103,11 +111,11 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}, options:
         }
       }
       if (turn.cost !== undefined) {
-        const cost = { amount: turn.cost, currency: "USD" };
+        const cost = { amount: turn.cost, currency: turn.currency ?? "USD" };
         const update = { sessionUpdate: "usage_update" as const, used: 1, size: 2, cost };
         await client.notify(methods.client.session.update, { sessionId, update });
       }
-      return { stopReason: "end_turn" as const, usage: turn.usage };
+      return { stopReason: turn.stopReason ?? "end_turn", usage: turn.usage };
     });
   const runtime = acpRuntime({ command: "fake", ...options }, (client) => ({
     connection: client.connect(app),
@@ -197,6 +205,24 @@ describe("acpRuntime", () => {
     await expect(unable.runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("cannot resume session old");
   });
 
+  it("forgets a session the agent fails to load, so the next call loads it again", async () => {
+    const { runtime, sent } = fakeAgent([{ says: ["hi"] }], { loadSession: true });
+    await expect(runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("Internal error");
+    await expect(runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("Internal error");
+    expect(sent("session/load")).toHaveLength(2);
+    expect(sent("session/prompt")).toEqual([]);
+  });
+
+  it("fails a call when the agent's process exits or cannot start", async () => {
+    const exits = acpRuntime({ command: process.execPath, args: ["-e", "process.exit(2)"] });
+    // The SDK fails the pending request with its own message, not the exit's.
+    await expect(exits.run({ prompt: "" })).rejects.toThrow(/closed|exited/);
+    await exits.close();
+    const missing = acpRuntime({ command: "ayaito-no-such-agent" });
+    await expect(missing.run({ prompt: "" })).rejects.toThrow("ENOENT");
+    await missing.close();
+  });
+
   it.each([
     ['{"topic":"a"}', { topic: "a" }],
     ['```\n{"topic":"a"}\n```', { topic: "a" }],
@@ -221,6 +247,22 @@ describe("acpRuntime", () => {
     const seen: unknown[] = [];
     await runtime.run({ prompt: "go", onActivity: (activity) => seen.push(activity) });
     expect(seen).toEqual([{ text: "I will look." }, { tool: "tool", text: "tool" }, { text: "It is done." }]);
+  });
+
+  it("reports no message that is only white space", async () => {
+    const { runtime } = fakeAgent([{ says: ["  ", "done"] }]);
+    const seen: unknown[] = [];
+    await runtime.run({ prompt: "go", onActivity: (activity) => seen.push(activity) });
+    expect(seen).toEqual([{ tool: "tool", text: "tool" }, { text: "done" }]);
+  });
+
+  it("fails a turn that does not end, and counts only a cost in USD", async () => {
+    const { runtime } = fakeAgent([
+      { says: ["half"], stopReason: "max_tokens" },
+      { says: ["ok"], cost: 3, currency: "EUR" },
+    ]);
+    await expect(runtime.run({ prompt: "" })).rejects.toThrow("acp: the turn ended with max_tokens");
+    expect((await runtime.run({ prompt: "" })).costUsd).toBeUndefined();
   });
 
   it("cancels the turn when the signal aborts", async () => {
