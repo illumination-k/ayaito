@@ -3,11 +3,11 @@
 [日本語](README.ja.md)
 
 A small engine for building agent workflows as typed graphs, whose agents run on Claude
-([Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)), Codex, opencode or any agent that
+([Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)), Codex, opencode, Antigravity (`agy`) or any agent that
 speaks the [Agent Client Protocol](https://agentclientprotocol.com) (ACP).
 
 ```bash
-npm install ayaito zod @anthropic-ai/claude-agent-sdk # or @openai/codex-sdk, @opencode-ai/sdk, @agentclientprotocol/sdk
+npm install ayaito zod @anthropic-ai/claude-agent-sdk # or @openai/codex-sdk, @opencode-ai/sdk, @agentclientprotocol/sdk (also for agy)
 ```
 
 ```ts
@@ -30,20 +30,20 @@ const result = await run(flow, input, { runId, store: new FsStore(".runs") });
 if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`);
 ```
 
-| Part                           | Role                                                                                                                                                                        |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output), `refineNode` (an agent judged by a check)                                                         |
-| `AgentRuntime`                 | Where agents run: `claudeRuntime` (`ayaito/claude`), `codexRuntime` (`ayaito/codex`), `opencodeRuntime` (`ayaito/opencode`), `acpRuntime` (`ayaito/acp`)                    |
-| `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                              |
-| middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun), `retry`, `effect` (side effects), `timeout`, `budget`                                      |
-| `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                |
-| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails |
-| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed)                                       |
-| `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                     |
-| `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                              |
-| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                                      |
-| `Stop`                         | Thrown by a node that finds nothing to do: the run ends early as a success (`status: "stopped"`)                                                                            |
-| `exec`                         | Runs a command and returns its exit code as the result, for gates such as tests                                                                                             |
+| Part                           | Role                                                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output), `refineNode` (an agent judged by a check)                                                                   |
+| `AgentRuntime`                 | Where agents run: `claudeRuntime` (`ayaito/claude`), `codexRuntime` (`ayaito/codex`), `opencodeRuntime` (`ayaito/opencode`), `acpRuntime` (`ayaito/acp`), `agyRuntime` (`ayaito/agy`) |
+| `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                                        |
+| middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun), `retry`, `effect` (side effects), `timeout`, `budget`                                                |
+| `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                          |
+| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails           |
+| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed)                                                 |
+| `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                               |
+| `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                                        |
+| `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                                                |
+| `Stop`                         | Thrown by a node that finds nothing to do: the run ends early as a success (`status: "stopped"`)                                                                                      |
+| `exec`                         | Runs a command and returns its exit code as the result, for gates such as tests                                                                                                       |
 
 - Rerunning with the same run ID returns the saved output of nodes with `checkpoint`. A node whose input
   changed because an earlier node ran again runs again. To redo from a given node, use `store.invalidate`.
@@ -106,6 +106,9 @@ server, the command of an ACP agent. A request's `access` replaces the tools and
   agent started in a mode that does not ask is not held back. ACP has no structured output: the schema goes
   into the prompt and the answer is parsed from the text. `model` sets the agent's model option, if it has one.
   `meta` goes to the agent as the `_meta` of its sessions, for settings only that agent understands.
+- `agyRuntime({ addDirs, agent, sandbox })` runs the Antigravity CLI through its ACP server (`agy acp`), as
+  `acpRuntime` does. Sign in first with `agy` or `agy acp --login`, or pass `GEMINI_API_KEY` in `env`.
+  `--dangerously-skip-permissions` would let agents do what `access` refuses, so it is not an option.
 - `defineRuntime` makes a runtime from an adapter, for another agent or a test. A request carries the name of
   the node making it (`node`), for a runtime that shows or records its calls per node.
 
