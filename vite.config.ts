@@ -25,10 +25,10 @@ export default defineConfig({
   },
   test: {
     // The mod's tests run in Claude Code: claude plugin test mods/ayaito
-    exclude: ["mods/**", "node_modules/**", "dist/**"],
+    exclude: ["mods/**", "node_modules/**", "dist/**", ".stryker-tmp/**", "reports/**"],
   },
   lint: {
-    ignorePatterns: ["mods/**", "dist/**"],
+    ignorePatterns: ["mods/**", "dist/**", ".stryker-tmp/**", "reports/**"],
     options: {
       typeAware: true,
       typeCheck: true,
@@ -82,6 +82,7 @@ export default defineConfig({
     ],
   },
   fmt: {
+    ignorePatterns: [".stryker-tmp/**", "reports/**"],
     printWidth: 120,
   },
 });

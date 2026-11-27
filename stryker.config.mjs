@@ -4,7 +4,8 @@ export default {
   testRunner: "vitest",
   // pnpm keeps the runner out of Stryker's own reach, so load it from here.
   plugins: [import.meta.resolve("@stryker-mutator/vitest-runner")],
-  mutate: ["src/**/*.ts"],
+  // The CLI's tests run it in a child process, where Stryker cannot switch mutants or see coverage.
+  mutate: ["src/**/*.ts", "!src/cli.ts"],
   // Stryker rewrites tsconfig with the TypeScript JS API, which TypeScript 7 no longer has. The
   // rewrite only matters for project references, which this project does not use, so point it at
   // no file to skip it.

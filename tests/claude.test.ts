@@ -129,6 +129,15 @@ describe("claudeRuntime", () => {
         expect(await ask(options, "Write", { file_path: "../x.ts" })).toMatchObject(denied);
         expect(await ask(options, "Write", { file_path: join(cwd, "link", "a.ts") })).toMatchObject(denied);
         expect(await ask(options, "WebFetch", { url: "https://example.com" })).toMatchObject(denied);
+        expect(await ask(options, "Write", { file_path: ".." })).toMatchObject(denied);
+        expect(await ask(options, "Edit", {})).toMatchObject({ behavior: "deny", message: "Edit: no file_path" });
+      }));
+
+    it("allows ayaito's own tools, and only those by their prefix", () =>
+      withWorktree(async ({ cwd }) => {
+        const options = await run(cwd);
+        expect(await ask(options, "mcp__ayaito__steer", {})).toMatchObject({ behavior: "allow" });
+        expect(await ask(options, "mcp__other__mcp__ayaito__", {})).toMatchObject({ behavior: "deny" });
       }));
 
     it("uses a caller's own canUseTool as given", () =>
