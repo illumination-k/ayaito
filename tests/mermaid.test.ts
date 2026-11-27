@@ -124,6 +124,13 @@ describe("toMermaid", () => {
     );
   });
 
+  it("labels a parallel node whose nodes all finish when one fails", () => {
+    const nodes = { a: fnNode("a", async (n: number) => n) };
+
+    expect(toMermaid(parallel("review", nodes, { failFast: false }))).toContain('subgraph s0["review (all finish)"]');
+    expect(toMermaid(parallel("review", nodes))).toContain('subgraph s0["review"]');
+  });
+
   it("draws a node without a shape as code and escapes quotes", () => {
     expect(toMermaid({ name: 'say "hi"', run: async () => 1 })).toContain('n0["say #quot;hi#quot;"]');
   });

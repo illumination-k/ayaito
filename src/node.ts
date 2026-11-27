@@ -16,7 +16,7 @@ export type Shape =
   | { kind: "fn" }
   | { kind: "agent" }
   | { kind: "flow"; steps: Step[] }
-  | { kind: "parallel"; branches: Record<string, Node<never, unknown>>; use: string[] }
+  | { kind: "parallel"; branches: Record<string, Node<never, unknown>>; failFast?: false; use: string[] }
   | { kind: "until"; body: Node<never, unknown>; max: number }
   | { kind: "assign"; key: string; node: Node<never, unknown> }
   | { kind: "branch"; cases: Record<string, Node<never, unknown>> }

@@ -183,19 +183,32 @@ type OutputsOf<T> = { [K in keyof T]: T[K] extends Node<never, infer O> ? O : ne
  * independent questions about one input, such as the five items of a checklist. Each node
  * runs through the middleware, and its start, end and error are recorded as in a flow. The
  * first node to fail (or stop) aborts the signal the others were given.
+ *
+ * With failFast: false, a failure aborts nothing: every node runs to its end, and then, if
+ * any failed, an AggregateError is thrown whose errors are theirs, in the order of nodes,
+ * each with the key of its node as `key`. With checkpoint in use, the nodes that succeeded
+ * keep their outputs, and a rerun runs only the failed ones. Cancelling the run still aborts
+ * every node.
  */
 export function parallel<T extends Record<string, Node<never, unknown>>>(
   name: string,
   nodes: T,
-  opts: { use?: Middleware[] } = {},
+  opts: { failFast?: boolean; use?: Middleware[] } = {},
 ): Node<InputOf<T>, OutputsOf<T>> {
+  const failFast = opts.failFast ?? true;
   const runs = Object.entries(nodes as Record<string, Node<never, unknown>>).map(
     ([key, node]) => [key, wrap(node, opts.use ?? [])] as const,
   );
   return {
     name,
-    shape: { kind: "parallel", branches: nodes, use: (opts.use ?? []).map(middlewareName) },
+    shape: {
+      kind: "parallel",
+      branches: nodes,
+      ...(!failFast && { failFast }),
+      use: (opts.use ?? []).map(middlewareName),
+    },
     run: async (input, ctx) => {
+      if (!failFast) return (await allSettled(name, runs, input as never, ctx)) as OutputsOf<T>;
       const abort = new AbortController();
       const inner: Context = { ...ctx, signal: AbortSignal.any([ctx.signal, abort.signal]) };
       try {
@@ -208,4 +221,38 @@ export function parallel<T extends Record<string, Node<never, unknown>>>(
       }
     },
   };
+}
+
+/** parallel without failFast: waits for every node, then fails with all the failures at once. */
+async function allSettled(
+  name: string,
+  runs: (readonly [string, Fn<never, unknown>])[],
+  input: never,
+  ctx: Context,
+): Promise<Record<string, unknown>> {
+  const results = await Promise.allSettled(runs.map(([, run]) => run(input, ctx)));
+  // The run was cancelled (a stop, a timeout, a spent budget): that is why the nodes failed.
+  ctx.signal.throwIfAborted();
+  const outputs: Record<string, unknown> = {};
+  const errors: (Error & { key: string })[] = [];
+  let stop: Stop | undefined;
+  for (const [i, result] of results.entries()) {
+    const key = (runs[i] as (typeof runs)[number])[0];
+    if (result.status === "fulfilled") outputs[key] = result.value;
+    else if (result.reason instanceof Stop) stop ??= result.reason;
+    else errors.push(withKey(result.reason, key));
+  }
+  if (errors.length > 0) {
+    const list = errors.map((e) => `${e.key}: ${e.message}`).join("; ");
+    throw new AggregateError(errors, `${name}: ${errors.length} of ${runs.length} failed (${list})`);
+  }
+  // No node failed, and one found nothing to do: the run ends early, as with failFast.
+  if (stop) throw stop;
+  return outputs;
+}
+
+/** The error a node of parallel threw, with the key of the node; what is not an Error is wrapped in one. */
+function withKey(error: unknown, key: string): Error & { key: string } {
+  const e = error instanceof Error && Object.isExtensible(error) ? error : new Error(String(error), { cause: error });
+  return Object.assign(e, { key });
 }
