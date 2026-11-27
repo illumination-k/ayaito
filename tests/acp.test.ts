@@ -68,6 +68,12 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}, options:
       record(() => ({})),
     )
     .onRequest(
+      methods.agent.session.load,
+      record((): never => {
+        throw new Error("no such session");
+      }),
+    )
+    .onRequest(
       methods.agent.session.setConfigOption,
       record(() => ({ configOptions })),
     )
@@ -195,6 +201,24 @@ describe("acpRuntime", () => {
 
     const unable = fakeAgent([]);
     await expect(unable.runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("cannot resume session old");
+  });
+
+  it("forgets a session the agent fails to load, so the next call loads it again", async () => {
+    const { runtime, sent } = fakeAgent([{ says: ["hi"] }], { loadSession: true });
+    await expect(runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("Internal error");
+    await expect(runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("Internal error");
+    expect(sent("session/load")).toHaveLength(2);
+    expect(sent("session/prompt")).toEqual([]);
+  });
+
+  it("fails a call when the agent's process exits or cannot start", async () => {
+    const exits = acpRuntime({ command: process.execPath, args: ["-e", "process.exit(2)"] });
+    // The SDK fails the pending request with its own message, not the exit's.
+    await expect(exits.run({ prompt: "" })).rejects.toThrow(/closed|exited/);
+    await exits.close();
+    const missing = acpRuntime({ command: "ayaito-no-such-agent" });
+    await expect(missing.run({ prompt: "" })).rejects.toThrow("ENOENT");
+    await missing.close();
   });
 
   it.each([

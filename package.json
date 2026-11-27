@@ -52,7 +52,8 @@
     "test": "vp test",
     "check": "vp check",
     "prepublishOnly": "vp run build",
-    "test:mutation": "stryker run"
+    "test:mutation": "stryker run",
+    "test:coverage": "vp test run --coverage"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^2.7.0",
@@ -63,6 +64,7 @@
     "@stryker-mutator/core": "10.1.1",
     "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "5.1.0",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:",
     "vitest": "5.1.0",
