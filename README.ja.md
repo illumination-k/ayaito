@@ -32,7 +32,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 
 | 部品                         | 役割                                                                                                                                                                                             |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                                                      |
+| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力。`output` がなければ最後のテキスト）・`refineNode`（検査で判定するエージェント）                                   |
 | `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`）・`agyRuntime`（`ayaito/agy`） |
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
 | middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす。`checkpointBy(key)` は `key(input, ctx)` のハッシュを使う）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`            |
@@ -93,7 +93,8 @@ opencode のサーバー、ACP のエージェントのコマンド）。`access
 JSON Schema にしてエージェントに渡し、答えをそれで検証する。
 
 - `agentNode` は検証済みの出力を返す。スキーマに合わない答えは同じセッションに返し、`attempts` 回
-  （既定 1）まで呼ぶ。それでも合わなければ例外にする
+  （既定 1）まで呼ぶ。それでも合わなければ例外にする。`output` を省くとエージェントの最後のテキストを返し
+  （`Node<I, string>`）、`refineNode` の `check` は `result.text` を読む
 - `refineNode` は `check(result, input, attempt, ctx)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
   `{ ok: true, value }` か `{ ok: false, feedback }` を返す。feedback は同じセッションに返し、`maxAttempts` 回まで呼ぶ。
   ノードの出力は `RefineResult` で、使い切っても例外にせず結果（`{ ok: false, feedback }`）として返すので、

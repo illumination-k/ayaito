@@ -51,6 +51,13 @@ describe("toGraph", () => {
     });
   });
 
+  it("draws an agent without output as an agent", () => {
+    const review = agentNode("review", { prompt: () => "/review" }, noRuntime);
+    expect(toGraph(Flow.start<undefined>("f").then(review).build()).nodes).toContainEqual(
+      expect.objectContaining({ kind: "agent", name: "review" }),
+    );
+  });
+
   it("describes choices, loops, forEach and worktrees", () => {
     const fix = agentNode("fix", { prompt: (task: string) => task, output: z.string() }, noRuntime);
     const flow = Flow.start<string[]>("ship")
