@@ -177,6 +177,33 @@ describe("steering", () => {
     ]);
   });
 
+  it("steers and stops an agent that answers as text", async () => {
+    const text = (t: string) => async (): Promise<RawResult> => ({ text: t, sessionId: "s1" });
+    const { runtime, seen, started } = scripted([untilAborted, untilAborted, text("stopped report")]);
+    const review = agentNode("review", { prompt: () => "review" }, runtime);
+    const steer = steering();
+
+    let working = started();
+    const running = run(review, undefined, { runId: "r", store: await tmpStore(), steer });
+    await working;
+    working = started();
+    expect(steer.send("review", "Look at the tests too.")).toBe(true);
+    await working;
+    expect(steer.stop("review")).toBe(true);
+
+    const { output: report, events } = await running;
+    expect(report).toBe("stopped report");
+    expect(seen).toEqual([
+      { prompt: "review", sessionId: undefined },
+      { prompt: steerPrompt(["Look at the tests too."]), sessionId: "s1" },
+      { prompt: STOP_PROMPT, sessionId: "s1" },
+    ]);
+    expect(events.filter((e) => e.type === "steer" || e.type === "wrapUp").map((e) => e.type)).toEqual([
+      "steer",
+      "wrapUp",
+    ]);
+  });
+
   it("reaches one agent of a forEach by its item, or any agent by its session", async () => {
     // Each agent works in a session named after its prompt, until it is told something.
     const told: Record<string, string> = {};

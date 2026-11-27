@@ -16,8 +16,8 @@ import {
 export interface AgentConfig<I, O> {
   /** The task, built from the node's input. */
   prompt: (input: I) => string;
-  /** The output the agent must return. */
-  output: OutputSchema<O>;
+  /** The output the agent must return. Without it, the answer is the agent's final text. */
+  output?: OutputSchema<O>;
   system?: string;
   model?: string;
   cwd?: string;
@@ -27,17 +27,31 @@ export interface AgentConfig<I, O> {
 /**
  * A node that runs an agent and returns its validated output. An answer that misses the
  * schema goes back to the same session, up to attempts calls in all (default 1); after
- * that the node throws.
+ * that the node throws. Without output, the node returns the agent's final text.
  */
+export function agentNode<I, O>(
+  name: string,
+  config: AgentConfig<I, O> & { output: OutputSchema<O>; attempts?: number },
+  runtime: AgentRuntime,
+): Node<I, O>;
+export function agentNode<I>(
+  name: string,
+  config: AgentConfig<I, undefined> & { output?: undefined; attempts?: number },
+  runtime: AgentRuntime,
+): Node<I, string>;
 export function agentNode<I, O>(
   name: string,
   config: AgentConfig<I, O> & { attempts?: number },
   runtime: AgentRuntime,
-): Node<I, O> {
+): Node<I, O | string> {
   const { attempts, ...agent } = config;
-  const node = refineNode(
+  const node = refineNode<I, O, O | string>(
     name,
-    { ...agent, check: (result) => ({ ok: true, value: result.structured }), maxAttempts: attempts ?? 1 },
+    {
+      ...agent,
+      check: (result) => ({ ok: true, value: agent.output ? result.structured : result.text }),
+      maxAttempts: attempts ?? 1,
+    },
     runtime,
   );
   return {
@@ -55,9 +69,9 @@ export function agentNode<I, O>(
  * A node that refines: runs the agent, lets check judge the result (a quote the source does
  * not contain, a test that fails), and sends check's feedback back to the same session, up
  * to maxAttempts calls in all. Its output is the RefineResult, so a later node can record
- * what never passed.
+ * what never passed. Without output, check reads the answer from the result's text.
  */
-export function refineNode<I, O, T>(
+export function refineNode<I, O = undefined, T = unknown>(
   name: string,
   config: AgentConfig<I, O> & {
     check: (result: AgentResult<O>, input: I, attempt: number) => Verdict<T> | Promise<Verdict<T>>;

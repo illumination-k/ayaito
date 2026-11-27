@@ -32,7 +32,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 
 | Part                           | Role                                                                                                                                                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output), `refineNode` (an agent judged by a check)                                                                   |
+| `Node<I, O>`                   | A named step: `fnNode` (code), `agentNode` (an agent's validated output, or its text without `output`), `refineNode` (an agent judged by a check)                                     |
 | `AgentRuntime`                 | Where agents run: `claudeRuntime` (`ayaito/claude`), `codexRuntime` (`ayaito/codex`), `opencodeRuntime` (`ayaito/opencode`), `acpRuntime` (`ayaito/acp`), `agyRuntime` (`ayaito/agy`) |
 | `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                                        |
 | middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun), `retry`, `effect` (side effects), `timeout`, `budget`                                                |
@@ -93,7 +93,8 @@ server, the command of an ACP agent. A request's `access` replaces the tools and
 4.2+). It goes to the agent as JSON Schema, and the answer is validated against it.
 
 - `agentNode` returns the validated output. An answer that misses the schema goes back to the same session,
-  up to `attempts` calls (default 1); then the node throws.
+  up to `attempts` calls (default 1); then the node throws. Without `output`, it returns the agent's final text
+  (`Node<I, string>`), and `refineNode`'s `check` reads `result.text`.
 - `refineNode` adds `check(result, input, attempt)`, a deterministic judge (a quote the source does not contain,
   a test that fails) that returns `{ ok: true, value }` or `{ ok: false, feedback }`. Feedback goes back to the
   same session, up to `maxAttempts` calls. The node's output is the `RefineResult`: running out of attempts is a
