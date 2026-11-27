@@ -89,6 +89,10 @@ An agent node's request is portable: `prompt`, `output`, `system`, `model`, `cwd
 `allowedTools`, `permissionMode`, `maxBudgetUsd` or in-process `mcpTools`, Codex's thread options, an opencode
 server, the command of an ACP agent. A request's `access` replaces the tools and permissions the runtime was made with.
 
+Claude's `env` goes over the inherited environment, and the session of a Claude Code that runs the flow is
+always left out, so that calls do not share it. To give flow agents their own login, set `CLAUDE_CONFIG_DIR` or
+`CLAUDE_CODE_OAUTH_TOKEN` there: `claudeRuntime({ env: { CLAUDE_CONFIG_DIR: dir } })`.
+
 `output` is any schema that implements [Standard Schema](https://standardschema.dev/) with JSON Schema (zod
 4.2+). It goes to the agent as JSON Schema, and the answer is validated against it.
 
