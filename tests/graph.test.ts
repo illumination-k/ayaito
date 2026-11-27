@@ -142,6 +142,150 @@ describe("parallel", () => {
   });
 });
 
+describe("parallel with failFast: false", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const fails = (name: string, message: string) =>
+    fnNode(name, async (): Promise<number> => {
+      throw new Error(message);
+    });
+  const failure = async (promise: Promise<unknown>) => {
+    const error = await promise.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(AggregateError);
+    return error as AggregateError;
+  };
+
+  it("lets a slow node finish when another fails, then fails with the failure and its key", async () => {
+    let aborted = false;
+    const events: string[] = [];
+    const slow = fnNode("slow", async (n: number, ctx) => {
+      await sleep(20);
+      aborted = ctx.signal.aborted;
+      return n;
+    });
+    const both = parallel("review", { slow, remote: fails("fails", "boom") }, { failFast: false });
+
+    const error = await failure(
+      run(both, 1, { runId: "r", store: await tmpStore(), log: (e) => events.push(`${e.type} ${e.node}`) }),
+    );
+
+    expect(aborted).toBe(false);
+    expect(events).toContain("end slow");
+    expect(error.errors).toHaveLength(1);
+    expect(error.errors[0]).toMatchObject({ key: "remote", message: "boom" });
+    expect(error.message).toContain("remote: boom");
+  });
+
+  it("collects every failure in the order of the nodes", async () => {
+    const late = fnNode("late", async (): Promise<number> => {
+      await sleep(10);
+      throw new Error("late boom");
+    });
+    const all = parallel(
+      "review",
+      { a: late, ok: fnNode("ok", async (n: number) => n), b: fails("early", "early boom") },
+      { failFast: false },
+    );
+
+    const error = await failure(run(all, 1, { runId: "r", store: await tmpStore() }));
+
+    expect(error.errors.map((e: { key: string }) => e.key)).toEqual(["a", "b"]);
+    expect(error.message).toContain("a: late boom");
+    expect(error.message).toContain("b: early boom");
+  });
+
+  it("wraps what is not an Error, to carry the key", async () => {
+    const text = fnNode("text", async (): Promise<number> => {
+      // oxlint-disable-next-line typescript/only-throw-error
+      throw "plain";
+    });
+
+    const error = await failure(
+      run(parallel("p", { text }, { failFast: false }), 1, { runId: "r", store: await tmpStore() }),
+    );
+
+    expect(error.errors[0]).toMatchObject({ key: "text", message: "plain", cause: "plain" });
+  });
+
+  it("returns the same output as the default when every node succeeds", async () => {
+    const nodes = { double: fnNode("double", async (n: number) => n * 2), text: fnNode("text", async (n: number) => `#${n}`) }; // prettier-ignore
+
+    const kept = await run(parallel("both", nodes, { failFast: false }), 3, { runId: "a", store: await tmpStore() });
+    const fast = await run(parallel("both", nodes), 3, { runId: "b", store: await tmpStore() });
+
+    const typed: { double: number; text: string } | undefined = kept.output;
+    expect(typed).toEqual({ double: 6, text: "#3" });
+    expect(kept.output).toEqual(fast.output);
+  });
+
+  it("reruns only the failed node, the others return from their checkpoints", async () => {
+    const store = await tmpStore();
+    const ran: string[] = [];
+    let down = true;
+    const reviewer = (name: string) =>
+      fnNode(name, async (n: number) => {
+        await sleep(10);
+        ran.push(name);
+        return n;
+      });
+    const remote = fnNode("remote", async (n: number) => {
+      if (down) throw new Error("unreachable");
+      ran.push("remote");
+      return n;
+    });
+    const review = parallel(
+      "review",
+      { a: reviewer("a"), remote, b: reviewer("b") },
+      { failFast: false, use: [checkpoint] },
+    );
+
+    const error = await failure(run(review, 1, { runId: "r", store }));
+    expect(error.errors.map((e: { key: string }) => e.key)).toEqual(["remote"]);
+    expect(ran.toSorted()).toEqual(["a", "b"]);
+
+    down = false;
+    const { output, events } = await run(review, 1, { runId: "r", store });
+
+    expect(output).toEqual({ a: 1, remote: 1, b: 1 });
+    expect(ran.toSorted()).toEqual(["a", "b", "remote"]);
+    expect(events.filter((e) => e.type === "skip").map((e) => e.node).toSorted()).toEqual(["a", "b"]); // prettier-ignore
+  });
+
+  it("aborts every node when the run is stopped, and fails with the reason", async () => {
+    const abort = new AbortController();
+    const aborted: string[] = [];
+    const waits = (name: string) =>
+      fnNode(name, async (_: number, ctx) => {
+        await new Promise((resolve) => ctx.signal.addEventListener("abort", resolve, { once: true }));
+        aborted.push(name);
+        throw ctx.signal.reason;
+      });
+    const both = parallel("both", { a: waits("a"), b: waits("b") }, { failFast: false });
+    setTimeout(() => abort.abort(new Error("cancelled")), 10);
+
+    const error = await run(both, 1, { runId: "r", store: await tmpStore(), signal: abort.signal }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(aborted.toSorted()).toEqual(["a", "b"]);
+    expect(error).toMatchObject({ message: "cancelled" });
+    expect(error).not.toBeInstanceOf(AggregateError);
+  });
+
+  it("ends the run early when a node throws Stop and none fails", async () => {
+    const stops = fnNode("stops", async (): Promise<number> => {
+      throw new Stop("nothing to do");
+    });
+    const ok = fnNode("ok", async (n: number) => n);
+
+    const result = await run(parallel("p", { stops, ok }, { failFast: false }), 1, { runId: "r", store: await tmpStore() }); // prettier-ignore
+
+    expect(result).toMatchObject({ status: "stopped", node: "stops", reason: "nothing to do" });
+  });
+});
+
 describe("Stop and cancellation", () => {
   it("ends the run early as a success when a node throws Stop", async () => {
     let after = false;
@@ -173,9 +317,12 @@ describe("Stop and cancellation", () => {
       throw new Error("boom");
     });
 
-    await expect(run(parallel("both", { waits, fails }), 1, { runId: "r", store: await tmpStore() })).rejects.toThrow(
-      "boom",
+    const error = await run(parallel("both", { waits, fails }), 1, { runId: "r", store: await tmpStore() }).catch(
+      (e: unknown) => e,
     );
+    // The first failure as it was thrown, not wrapped.
+    expect(error).toMatchObject({ message: "boom" });
+    expect(error).not.toBeInstanceOf(AggregateError);
     expect(aborted).toBe(true);
   });
 

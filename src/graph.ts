@@ -32,6 +32,8 @@ export interface GraphNode {
   key?: string;
   /** How many items run at once (forEach); absent when all do. */
   concurrency?: number;
+  /** Set when a failed node does not abort the others (parallel with failFast: false). */
+  failFast?: false;
   /** How many times the body runs at most (until). */
   max?: number;
 }
@@ -135,7 +137,10 @@ export function toGraph(node: Node<never, unknown>): Graph {
         return exits;
       }
       case "parallel": {
-        const group = add({ id: id("s"), kind: "parallel", ...base }, parent, extra);
+        const group = add({ id: id("s"), kind: "parallel", ...base }, parent, {
+          ...extra,
+          ...(shape.failFast === false && { failFast: false }),
+        });
         return Object.entries(shape.branches).flatMap(([key, branch]) =>
           draw(branch, from, { ...into, use: [...into.use, ...shape.use] }, group, { key }),
         );
@@ -187,6 +192,10 @@ export const graphSchema = {
         worktree: { const: true, description: "Runs in a git worktree." },
         key: { type: "string", description: "The key of the output among those of a parallel node." },
         concurrency: { type: "number", description: "How many items run at once (forEach); absent when all do." },
+        failFast: {
+          const: false,
+          description: "Set when a failed node does not abort the others (parallel with failFast: false).",
+        },
         max: { type: "number", description: "How many times the body runs at most (until)." },
       },
     },
