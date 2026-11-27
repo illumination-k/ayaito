@@ -35,7 +35,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                                                      |
 | `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`）・`agyRuntime`（`ayaito/agy`） |
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
-| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                                                       |
+| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす。`checkpointBy(key)` は `key(input, ctx)` のハッシュを使う）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`            |
 | `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                                                 |
 | `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）。`failFast: false` なら、1 つが失敗してもほかは最後まで走る                                             |
 | `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                                                  |
