@@ -20,7 +20,21 @@ export type Graph = {
 
 /** A line of ayaito's events.jsonl. */
 export type RunEvent = {
-  type: "start" | "end" | "skip" | "retry" | "error" | "stop" | "wrapUp" | "usage" | "activity" | "steer" | "session";
+  type:
+    | "start"
+    | "end"
+    | "skip"
+    | "retry"
+    | "error"
+    | "stop"
+    | "wrapUp"
+    | "usage"
+    | "activity"
+    | "steer"
+    | "session"
+    | "prompt"
+    | "answer"
+    | "log";
   node: string;
   /** Inside a forEach: the index of the item the event is for. */
   item?: string;

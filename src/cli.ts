@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 import { toGraph } from "./graph.ts";
+import { formatEvent } from "./log.ts";
 import { toMermaid } from "./mermaid.ts";
 import type { Node } from "./node.ts";
 import { exec } from "./exec.ts";
@@ -31,6 +32,12 @@ ayaito steer <run id> <node> <message> [--store <dir>]
 ayaito stop <run id> [<node>] [--store <dir>]
   Stops a run that \`ayaito run\` is running; its checkpoints stay, so the same run id resumes it. With a
   node, stops only that node's agent: it answers from what it has done so far, and the run goes on.
+
+ayaito log <run id> [--node <node>] [--follow] [--store <dir>]
+  Prints what happened in a run, a line per event of its events.jsonl: the nodes that started and ended,
+  what each agent was asked (prompt), what it said and the tools it called, what it answered, what it
+  cost, and what the nodes' code logged. --node keeps one node's lines (name, or name#item in a forEach).
+  --follow goes on printing until the run ends.
 
 ayaito graph <flow file> [--mermaid]
   Prints the flow as JSON (toGraph), or as a Mermaid flowchart.`;
@@ -81,14 +88,46 @@ async function follow(file: string, take: (order: Order) => void): Promise<() =>
   return () => clearInterval(timer);
 }
 
+/** Whether \`ayaito run\` has written the run's result: an attempt that is going on has none. */
+async function hasEnded(store: FsStore, runId: string): Promise<boolean> {
+  const result = await readFile(join(store.dir, runId, "result.json"), "utf8").catch(() => "");
+  return result.trim() !== "";
+}
+
+/** Prints the events of a run as lines for people; with follow, also those to come, until the run ends. */
+async function log(store: FsStore, runId: string, opts: { node?: string; follow: boolean }): Promise<number> {
+  if ((await store.get(runId, "graph")) === undefined) throw new Error(`No run ${runId} in ${store.dir}.`);
+  const [name, item] = opts.node?.split("#") ?? [];
+  let seen = 0;
+  const print = async () => {
+    // A line that is being written does not parse yet: it is printed the next time.
+    const events = await store.events(runId).catch((error: unknown) => {
+      if (error instanceof SyntaxError) return [];
+      throw error;
+    });
+    for (const e of events.slice(seen)) {
+      if ((name === undefined || e.node === name) && (item === undefined || e.item === item)) {
+        console.log(formatEvent(e));
+      }
+    }
+    seen = Math.max(seen, events.length);
+  };
+  for (;;) {
+    // Asked before reading, so that what the run wrote last is printed.
+    const isOver = !opts.follow || (await hasEnded(store, runId));
+    await print();
+    if (isOver) return 0;
+    await new Promise((r) => setTimeout(r, STEER_POLL_MS));
+  }
+}
+
 /** Leaves an order for the run to pick up: for the run, or for a node when its agent is there to take it. */
 async function order(store: FsStore, runId: string, sent: Order): Promise<number> {
   const graph = (await store.get(runId, "graph")) as { nodes: { name?: string; kind: string }[] } | undefined;
   if (!graph) throw new Error(`No run ${runId} in ${store.dir}.`);
   const { node } = sent;
   if (node === undefined) {
-    const result = await readFile(join(store.dir, runId, "result.json"), "utf8").catch(() => "");
-    if (result.trim() !== "") throw new Error(`Run ${runId} has ended.`);
+    if (await hasEnded(store, runId)) throw new Error(`Run ${runId} has ended.`);
     await appendFile(steerFile(store, runId), `${JSON.stringify(sent)}\n`);
     console.log(`Told run ${runId} to stop. Running it again with the same run id resumes it.`);
     return 0;
@@ -152,17 +191,21 @@ async function main(): Promise<number> {
       input: { type: "string" },
       "input-file": { type: "string" },
       mermaid: { type: "boolean", default: false },
+      node: { type: "string" },
+      follow: { type: "boolean", short: "f", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
   const [command, file, node, ...words] = positionals;
   const isSteer = command === "steer" && node !== undefined && words.length > 0;
   const isStop = command === "stop" && words.length === 0;
-  if (values.help || !file || (command !== "run" && command !== "graph" && !isSteer && !isStop)) {
+  const isLog = command === "log" && node === undefined;
+  if (values.help || !file || (command !== "run" && command !== "graph" && !isSteer && !isStop && !isLog)) {
     console.error(USAGE);
     return values.help ? 0 : 2;
   }
   const storeOf = async (runId: string) => new FsStore(values.store ?? (await defaultStore(runId)));
+  if (isLog) return log(await storeOf(file), file, { node: values.node, follow: values.follow });
   if (isStop) return order(await storeOf(file), file, { node, stop: true });
   if (isSteer) return order(await storeOf(file), file, { node, message: words.join(" ") });
   const { flow, input } = await load(file);

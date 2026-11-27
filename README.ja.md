@@ -65,6 +65,12 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   中断した呼び出しは実行環境が `InterruptedError`（セッションと使用量つき）として返す
 - エージェントの発言とツール呼び出しは、作業中に `activity` イベントになる。`events.jsonl`（または `run` の `log`）で
   各エージェントが何をしているか分かる。発言は 1000 文字、ツールの入力は 300 文字で切る
+- ノードの中で何が起きたかを外から追えるよう、エージェントの呼び出しごとに、何を頼んだか（`prompt` イベント。
+  ノードのプロンプト、その後の `check` のフィードバック・steer のメッセージ・まとめの依頼。実行環境・モデル・
+  access・再開したセッションつき）と何と答えたか（`answer` イベント）を、切らずに記録する。ノードのコードからは
+  `ctx.emit({ type: "log", node, text })` で任意の行を残せる。`formatEvent(event)` はイベントを人が読む 1 行にする
+  （`log: (e) => console.log(formatEvent(e))`）。`ayaito log <run id>` は実行をその形で表示する。ツールの結果は
+  記録しない。それは実行環境のセッションにある（`session` イベントに id がある）
 - `run(..., { steer })` で作業中のエージェントに介入できる。`const steer = steering()` として
   `steer.send(node, message)` を呼ぶと、そのノードのエージェントのターンを中断し、同じセッションにメッセージを渡す。
   エージェントはそれを踏まえて作業を続ける（`steer` イベント）。試行回数には数えない。そのノードのエージェントが
@@ -157,6 +163,7 @@ const { nodes, edges } = toGraph(flow);
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
 npx ayaito graph flow.ts > graph.json
+npx ayaito log weekly --follow   # 各ノードの動き・頼んだこと・答えを起きた順に表示。--node select-topic で 1 ノードだけ
 npx ayaito steer weekly select-topic "季節の話題にして"   # 実行中のノードのエージェントへ
 npx ayaito stop weekly select-topic   # そのエージェントはすぐ答え、実行は続く。ノードなしなら実行を止める
 ```

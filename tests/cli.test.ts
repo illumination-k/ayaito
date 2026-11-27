@@ -60,6 +60,42 @@ describe("ayaito", () => {
     expect(result.error).toContain("boom 1");
   });
 
+  it("prints what happened in a run as lines, of one node or all, and follows a run to its end", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ayaito-"));
+    const file = await flowFile(
+      dir,
+      `const say = (name: string) => fnNode(name, async (n: number, ctx) => {
+         ctx.emit({ type: "log", node: name, text: name + " got " + n });
+         await new Promise((r) => setTimeout(r, 300));
+         return n + 1;
+       });
+       export default Flow.start<number>("f").then(say("one")).then(say("two")).build();`,
+    );
+    const store = ["--store", dir];
+    expect(await cli("log", "r", ...store)).toMatchObject({ code: 1, stderr: expect.stringContaining("No run r") });
+
+    const running = cli("run", file, "--run-id", "r", "--input", "1", ...store);
+    while (!(await readFile(join(dir, "r", "events.jsonl"), "utf8").catch(() => "")).includes('"start"')) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    // Started while the run goes on, it ends with the run and has what the run did last.
+    const followed = (await cli("log", "r", "--follow", ...store)).stdout.trimEnd().split("\n");
+    await running;
+    expect(followed.map((line) => line.replace(/^\S+ /, "").replace(/\(.*\)/, "(time)"))).toEqual([
+      "one start",
+      "one log: one got 1",
+      "one end (time)",
+      "two start",
+      "two log: two got 2",
+      "two end (time)",
+    ]);
+
+    expect((await cli("log", "r", ...store)).stdout.trimEnd().split("\n")).toEqual(followed);
+    const two = (await cli("log", "r", "--node", "two", ...store)).stdout.trimEnd().split("\n");
+    expect(two).toEqual(followed.slice(3));
+    expect(await cli("log", "r", "extra", ...store)).toMatchObject({ code: 2 });
+  });
+
   it("prints the graph of a flow, as JSON or Mermaid", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ayaito-"));
     const file = await flowFile(

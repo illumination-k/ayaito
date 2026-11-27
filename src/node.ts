@@ -1,3 +1,4 @@
+import type { Access } from "./runtime.ts";
 import type { Steer } from "./steer.ts";
 
 /** A step of work: what a node does with its input. */
@@ -50,6 +51,24 @@ type NodeEvent =
   | { type: "wrapUp"; node: string; at: string; stopped?: true }
   /** An agent's call runs in this session: resume it to go on from its work, or send it a message by this id. */
   | { type: "session"; node: string; at: string; sessionId: string }
+  /**
+   * What a call asked an agent, whole: the node's prompt, and after it check's feedback, a message sent
+   * to the agent or the request for its answer. sessionId is the session the call resumes.
+   */
+  | {
+      type: "prompt";
+      node: string;
+      at: string;
+      text: string;
+      runtime: string;
+      model?: string;
+      access?: Access;
+      sessionId?: string;
+    }
+  /** What a call of an agent answered, whole: its output as JSON, or its text. */
+  | { type: "answer"; node: string; at: string; text: string }
+  /** What a node's code tells whoever follows the run: ctx.emit({ type: "log", node, text }). */
+  | { type: "log"; node: string; at: string; text: string }
   /** What an agent said, or with tool, a tool it called and the input in short. */
   | { type: "activity"; node: string; at: string; tool?: string; text: string }
   /** A message sent to the agent while it worked (run's steer) reached its session. */
