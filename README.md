@@ -101,6 +101,10 @@ server, the command of an ACP agent. A request's `access` replaces the tools and
   does the same outside a flow.
 - Codex needs every object strict (`z.strictObject`). Do not use tuples (the Claude CLI validates with draft-07
   and the API with 2020-12, and one of them rejects them).
+- `claudeRuntime` runs `read-only` calls in `dontAsk` mode. `write` calls answer permission requests with
+  `canUseTool`: Edit and Write are allowed only for files whose real path is inside `cwd` (so a worktree under a
+  `.claude` directory, which `dontAsk` refuses to edit, works), and nothing is ever prompted. A `canUseTool` passed
+  in the options replaces this rule.
 - `acpRuntime({ command, args })` starts an ACP agent as a child process and shares it between calls. `access`
   becomes the answer to the agent's permission requests (read-only allows reading and searching only), so an
   agent started in a mode that does not ask is not held back. ACP has no structured output: the schema goes
