@@ -12,6 +12,7 @@ export type Graph = {
     worktree?: true;
     key?: string;
     concurrency?: number;
+    failFast?: false;
     max?: number;
   }[];
   edges: { from: string; to: string; when?: string; map?: true; use?: string[] }[];
@@ -160,7 +161,7 @@ export function view(dir: string, runId: string, graph: Graph, events: RunEvent[
         n.worktree && "worktree",
         n.kind === "forEach" && `each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`}`,
         n.kind === "until" && `at most ${n.max}`,
-        n.kind === "parallel" && "parallel",
+        n.kind === "parallel" && (n.failFast === false ? "parallel, all finish" : "parallel"),
         ...new Set(graph.edges.filter((e) => e.to === n.id).flatMap((e) => e.use ?? [])),
         untaken && !isUntaken && "not taken",
         state && state.runs > 1 && `×${state.runs}`,

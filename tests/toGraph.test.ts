@@ -90,17 +90,30 @@ describe("toGraph", () => {
     expect(toMermaid(graph)).toBe(toMermaid(flow));
   });
 
+  it("marks a parallel node whose nodes all finish, and only that one", () => {
+    const nodes = { a: fnNode("a", async (n: number) => n) };
+    const group = (opts?: { failFast?: boolean }) => toGraph(parallel("review", nodes, opts)).nodes[1];
+
+    expect(group({ failFast: false })).toEqual({ id: "s0", kind: "parallel", name: "review", label: "review", failFast: false }); // prettier-ignore
+    expect(group({ failFast: true })).toEqual({ id: "s0", kind: "parallel", name: "review", label: "review" });
+    expect(group()).toEqual({ id: "s0", kind: "parallel", name: "review", label: "review" });
+  });
+
   it("has a JSON Schema that names every kind and property toGraph uses", () => {
     const fix = agentNode("fix", { prompt: (task: string) => task, output: z.string() }, noRuntime);
     const flow = Flow.start<string[]>("ship")
       .then(forEach("each", worktree(fix), { concurrency: 2, use: [checkpoint] }))
       .then(
-        parallel("checks", {
-          n: assign(
-            "count",
-            fnNode("count", async (s: { length: number }) => s.length),
-          ),
-        }),
+        parallel(
+          "checks",
+          {
+            n: assign(
+              "count",
+              fnNode("count", async (s: { length: number }) => s.length),
+            ),
+          },
+          { failFast: false },
+        ),
         {
           map: (fixes) => ({ length: fixes.length }),
         },

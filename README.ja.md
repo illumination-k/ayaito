@@ -37,7 +37,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
 | middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                                                       |
 | `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                                                 |
-| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                                                                                         |
+| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）。`failFast: false` なら、1 つが失敗してもほかは最後まで走る                                             |
 | `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                                                  |
 | `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                                                    |
 | `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                                                     |
@@ -49,6 +49,10 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   走り直して入力が変わったノードは走り直す。特定のノードからやり直すときは `store.invalidate`
 - `run` に `signal` を渡すと実行を止められる。止めた後はノードを始めず、エージェントにも伝わる。
   `parallel` の 1 つが失敗すると、ほかも止める
+- `parallel(name, nodes, { failFast: false })` は、1 つが失敗してもほかを最後まで走らせ、その後で
+  `AggregateError` を投げる（`errors` は失敗したノードのエラーで、それぞれ `key` を持つ）。`use: [checkpoint]` と
+  組み合わせると、成功したノードの出力は残り、同じ run ID で走らせ直すと失敗したノードだけが走る
+  （長くて高価なエージェントの実行向け）。実行を止めたときは、すべてのノードを止める
 - edge の `budget({ usd, tokens })` はノードの、`run(..., { budget })` は実行全体の支出を制限する（再開した実行は
   それまでの分も数える）。超えると signal を止めて `BudgetError` を投げる。呼び出しは終わるときに使用量を報告するので、
   超えた呼び出しは最後まで走る。`timeout(ms)` はノードを止めて `TimeoutError` を投げる。`retry` の内側なら各回、

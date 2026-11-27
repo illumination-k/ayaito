@@ -37,7 +37,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | `Edge` (the 2nd arg of `then`) | `map`, which turns the previous output into the next input, and middleware that wraps the node                                                                                        |
 | middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun), `retry`, `effect` (side effects), `timeout`, `budget`                                                |
 | `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                          |
-| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items)                                                                     |
+| `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails           |
 | `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed)                                                 |
 | `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                               |
 | `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                                        |
@@ -49,6 +49,10 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   changed because an earlier node ran again runs again. To redo from a given node, use `store.invalidate`.
 - `run` takes a `signal` to cancel the run; no node starts after it is aborted, and agents get it too. When a
   node of `parallel` fails, the others are aborted.
+- `parallel(name, nodes, { failFast: false })` lets every node finish when one fails, and then throws an
+  `AggregateError` whose `errors` are the failures, each with its `key`. With `use: [checkpoint]`, the nodes
+  that succeeded keep their outputs, so a rerun with the same run ID runs only the failed ones: for nodes that
+  are long, costly agent runs. Cancelling the run still aborts every node.
 - `budget({ usd, tokens })` on an edge limits what a node spends, `run(..., { budget })` the whole run (counting
   earlier attempts of a resumed run): past it, the signal aborts and `BudgetError` is thrown. A call reports
   usage when it ends, so the call that goes over finishes. `timeout(ms)` aborts a node and throws `TimeoutError`;
