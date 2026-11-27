@@ -27,7 +27,7 @@ const flow = Flow.start<number>("f")
       a: fnNode("a", async (s: { n: number }) => s.n),
       b: fnNode("b", async (s: { n: number }) => s.n),
     }),
-    { map: (s) => ({ n: s.n }) },
+    { map: () => ({ n: 1 }) },
   )
   .then(
     branch("route", (s: { a: number }) => (s.a > 0 ? "big" : "small"), {
