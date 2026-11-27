@@ -38,7 +38,7 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
 | middleware                     | `checkpoint` (stores the output by the hash of the input and skips it on rerun; `checkpointBy(key)` hashes `key(input, ctx)` instead), `retry`, `effect` (side effects), `timeout`, `budget` |
 | `assign` / `until`             | Adds the output to the state for later nodes / repeats a node until it is done (check → fix)                                                                                                 |
 | `parallel`                     | Runs several nodes on the same input at once and returns their outputs under the same keys (e.g. checklist items); with `failFast: false`, the others finish when one fails                  |
-| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed)                                                        |
+| `forEach`                      | Runs a node on each item of a list, at most `concurrency` at once, and returns the outputs in order (e.g. the tasks a planner listed); `failFast: false` as in `parallel`                    |
 | `branch`                       | Runs the one node that a function picks for the input (pass → ship, fail → fix; easy → a cheaper model)                                                                                      |
 | `worktree`                     | Runs a node in a git worktree on its own branch and can commit what it changed, so that agents that write can run side by side                                                               |
 | `run` / `FsStore`              | Runs a flow and saves the outputs and `events.jsonl` (start, end, cost, errors, what agents do) under `<dir>/<runId>/`                                                                       |
@@ -53,6 +53,9 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   `AggregateError` whose `errors` are the failures, each with its `key`. With `use: [checkpoint]`, the nodes
   that succeeded keep their outputs, so a rerun with the same run ID runs only the failed ones: for nodes that
   are long, costly agent runs. Cancelling the run still aborts every node.
+- `forEach(name, node, { failFast: false })` does the same for items: every item runs to its end (`concurrency`
+  still bounds how many at once, and a failure does not stop the queue), and the `errors` of the `AggregateError`
+  carry the index of their item as `item`.
 - `budget({ usd, tokens })` on an edge limits what a node spends, `run(..., { budget })` the whole run (counting
   earlier attempts of a resumed run): past it, the signal aborts and `BudgetError` is thrown. A call reports
   usage when it ends, so the call that goes over finishes. `timeout(ms)` aborts a node and throws `TimeoutError`;

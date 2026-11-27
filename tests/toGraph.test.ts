@@ -99,10 +99,19 @@ describe("toGraph", () => {
     expect(group()).toEqual({ id: "s0", kind: "parallel", name: "review", label: "review" });
   });
 
+  it("marks a forEach whose items all finish, and only that one", () => {
+    const item = fnNode("item", async (n: number) => n);
+    const group = (opts?: { failFast?: boolean }) => toGraph(forEach("each", item, opts)).nodes[1];
+
+    expect(group({ failFast: false })).toEqual({ id: "s0", kind: "forEach", name: "each", label: "each", failFast: false }); // prettier-ignore
+    expect(group({ failFast: true })).toEqual({ id: "s0", kind: "forEach", name: "each", label: "each" });
+    expect(group()).toEqual({ id: "s0", kind: "forEach", name: "each", label: "each" });
+  });
+
   it("has a JSON Schema that names every kind and property toGraph uses", () => {
     const fix = agentNode("fix", { prompt: (task: string) => task, output: z.string() }, noRuntime);
     const flow = Flow.start<string[]>("ship")
-      .then(forEach("each", worktree(fix), { concurrency: 2, use: [checkpoint] }))
+      .then(forEach("each", worktree(fix), { concurrency: 2, failFast: false, use: [checkpoint] }))
       .then(
         parallel(
           "checks",
