@@ -37,4 +37,5 @@ export {
 } from "./runtime.ts";
 export { steering, type Sent, type Steer } from "./steer.ts";
 export { FsStore } from "./store.ts";
+export { formatRun } from "./watch.ts";
 export { worktree, type InWorktree, type WorktreeOptions } from "./worktree.ts";

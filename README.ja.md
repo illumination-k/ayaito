@@ -69,7 +69,9 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   ノードのプロンプト、その後の `check` のフィードバック・steer のメッセージ・まとめの依頼。実行環境・モデル・
   access・再開したセッションつき）と何と答えたか（`answer` イベント）を、切らずに記録する。ノードのコードからは
   `ctx.emit({ type: "log", node, text })` で任意の行を残せる。`formatEvent(event)` はイベントを人が読む 1 行にする
-  （`log: (e) => console.log(formatEvent(e))`）。`ayaito log <run id>` は実行をその形で表示する。ツールの結果は
+  （`log: (e) => console.log(formatEvent(e))`）。`ayaito log <run id>` は実行をその形で表示する。`formatRun(graph, events)` は実行全体をテキストにする
+  （グラフのツリーに各ノードの状態・時間・コスト・実行中のエージェントの直近の動きを重ねる）。
+  `ayaito watch <run id>` はそれを実行が終わるまで描き直す。ツールの結果は
   記録しない。それは実行環境のセッションにある（`session` イベントに id がある）
 - `run(..., { steer })` で作業中のエージェントに介入できる。`const steer = steering()` として
   `steer.send(node, message)` を呼ぶと、そのノードのエージェントのターンを中断し、同じセッションにメッセージを渡す。
@@ -163,6 +165,7 @@ const { nodes, edges } = toGraph(flow);
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # 同じ run id なら再開する
 npx ayaito graph flow.ts > graph.json
+npx ayaito watch weekly   # ノードをツリーで表示し、実行が終わるまで描き直す（実行中・完了・失敗、時間、コスト、エージェントの動き）
 npx ayaito log weekly --follow   # 各ノードの動き・頼んだこと・答えを起きた順に表示。--node select-topic で 1 ノードだけ
 npx ayaito steer weekly select-topic "季節の話題にして"   # 実行中のノードのエージェントへ
 npx ayaito stop weekly select-topic   # そのエージェントはすぐ答え、実行は続く。ノードなしなら実行を止める

@@ -72,7 +72,9 @@ if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`)
   with the runtime, model, access and the session it resumes) and what it answered (an `answer` event), both
   whole. A node's code adds its own lines with `ctx.emit({ type: "log", node, text })`. `formatEvent(event)`
   turns an event into a line for people (`log: (e) => console.log(formatEvent(e))`), and `ayaito log <run id>`
-  prints a run that way. What tools returned is not recorded: that is in the runtime's own session (the
+  prints a run that way. `formatRun(graph, events)` is the whole run as text instead: the graph as a tree with
+  each node's state, time, cost and what a running agent last did, which `ayaito watch <run id>` redraws until
+  the run ends. What tools returned is not recorded: that is in the runtime's own session (the
   `session` event has its id).
 - `run(..., { steer })` lets someone reach an agent at work: with `const steer = steering()`,
   `steer.send(node, message)` interrupts the turn of that node's agent and gives the message to the same session,
@@ -176,6 +178,7 @@ run that is already in `./.runs`, where 0.2.0 and earlier kept them, is still fo
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run
 npx ayaito graph flow.ts > graph.json
+npx ayaito watch weekly   # the nodes as a tree, redrawn as the run goes: running, done or failed, time, cost, what agents do
 npx ayaito log weekly --follow   # what each node did, asked and answered, as it happens; --node select-topic for one
 npx ayaito steer weekly select-topic "Pick something seasonal."   # to the agent of a node that is running
 npx ayaito stop weekly select-topic   # that agent answers now and the run goes on; without a node, stops the run

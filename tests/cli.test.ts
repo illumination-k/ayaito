@@ -94,6 +94,14 @@ describe("ayaito", () => {
     const two = (await cli("log", "r", "--node", "two", ...store)).stdout.trimEnd().split("\n");
     expect(two).toEqual(followed.slice(3));
     expect(await cli("log", "r", "extra", ...store)).toMatchObject({ code: 2 });
+
+    // Not in a terminal, watch prints the run once, as it is.
+    const watched = (await cli("watch", "r", ...store)).stdout.replaceAll(/\d+ms/g, "0ms");
+    expect(watched).toBe("r · done · 2/2 steps\n✓ f\n  ✓ one  0ms\n  ✓ two  0ms\n");
+    expect(await cli("watch", "none", ...store)).toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("No run none"),
+    });
   });
 
   it("prints the graph of a flow, as JSON or Mermaid", async () => {
