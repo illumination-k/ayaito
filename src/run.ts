@@ -42,7 +42,7 @@ export async function run<I, O>(
       return opts.store.events(opts.runId);
     },
     emit: (e) => {
-      const event = { ...e, at: new Date().toISOString() } as RunEvent;
+      const event = { ...e, at: new Date().toISOString() };
       events.push(event);
       opts.log?.(event);
       // Events go to the store in order without making nodes wait for the disk.

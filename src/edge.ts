@@ -52,6 +52,8 @@ export function effect(fn: (output: unknown, ctx: Context, node: string) => void
  * working tree). key may be async. The stored entry still holds the whole input, to show what
  * ran.
  */
+// I is only there for callers to type key's input.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters
 export function checkpointBy<I = any>(key: (input: I, ctx: Context) => unknown): Middleware {
   return named("checkpoint", (node, next) => async (input, ctx) => {
     const k = checkpointKey(node.name, await key(input as never, ctx));

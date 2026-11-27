@@ -208,7 +208,7 @@ describe("parallel", () => {
       events
         .filter((e) => e.type === "end")
         .map((e) => e.node)
-        .sort(),
+        .toSorted(),
     ).toEqual(["double", "text"]);
   });
 });

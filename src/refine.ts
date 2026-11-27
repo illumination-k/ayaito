@@ -121,6 +121,8 @@ async function runOnce<O>(
     for (const message of messages) onSteer?.(message);
     return steerPrompt(messages);
   };
+  // One request, copied once per call: the loop runs a few times, not over a list.
+  // oxlint-disable oxc/no-accumulating-spread
   let current = request;
   for (;;) {
     // What was sent between calls goes with the prompt.
@@ -155,6 +157,7 @@ async function runOnce<O>(
       if (inbox) inbox.wake = undefined;
     }
   }
+  // oxlint-enable oxc/no-accumulating-spread
 }
 
 async function attempt<O>(runtime: AgentRuntime, request: AgentRequest<O>): Promise<AgentResult<O> | OutputError> {

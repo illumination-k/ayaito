@@ -127,7 +127,13 @@ describe("steering", () => {
     let wrapUp: (() => void) | undefined;
     const { runtime, seen, started } = scripted([
       // Time is up between the interruption and the resumed call.
-      (request) => untilAborted(request).finally(() => new Promise((resolve) => (wrapUp = () => resolve(undefined)))),
+      async (request) => {
+        try {
+          return await untilAborted(request);
+        } finally {
+          await new Promise((resolve) => (wrapUp = () => resolve(undefined)));
+        }
+      },
       async () => answer(4),
     ]);
     const research = agentNode("research", { prompt: () => "count", output }, runtime);
