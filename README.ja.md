@@ -3,11 +3,11 @@
 [English](README.md)
 
 エージェントのワークフローを型付きのグラフとして組む小さなエンジン。エージェントは Claude
-（[Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)）・Codex・opencode のほか、
+（[Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)）・Codex・opencode・Antigravity（`agy`）のほか、
 [Agent Client Protocol](https://agentclientprotocol.com)（ACP）を話すエージェントで動かせる。
 
 ```bash
-npm install ayaito zod @anthropic-ai/claude-agent-sdk # か @openai/codex-sdk・@opencode-ai/sdk・@agentclientprotocol/sdk
+npm install ayaito zod @anthropic-ai/claude-agent-sdk # か @openai/codex-sdk・@opencode-ai/sdk・@agentclientprotocol/sdk（agy もこれ）
 ```
 
 ```ts
@@ -30,20 +30,20 @@ const result = await run(flow, input, { runId, store: new FsStore(".runs") });
 if (result.status === "stopped") console.log(`${result.node}: ${result.reason}`);
 ```
 
-| 部品                         | 役割                                                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                        |
-| `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`） |
-| `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                       |
-| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                         |
-| `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                   |
-| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                                                           |
-| `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                    |
-| `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                      |
-| `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                       |
-| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー・エージェントの動き）の保存                                                          |
-| `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                                                      |
-| `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                                                             |
+| 部品                         | 役割                                                                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Node<I, O>`                 | 名前付きの処理。`fnNode`（コード）・`agentNode`（エージェントの検証済みの出力）・`refineNode`（検査で判定するエージェント）                                                                      |
+| `AgentRuntime`               | エージェントの実行環境。`claudeRuntime`（`ayaito/claude`）・`codexRuntime`（`ayaito/codex`）・`opencodeRuntime`（`ayaito/opencode`）・`acpRuntime`（`ayaito/acp`）・`agyRuntime`（`ayaito/agy`） |
+| `Edge`（`then` の第 2 引数） | 前の出力を次の入力に変える `map` と、ノードを包む middleware                                                                                                                                     |
+| middleware                   | `checkpoint`（入力のハッシュで出力を保存し、再実行で飛ばす）・`retry`・`effect`（副作用・状態の登録）・`timeout`・`budget`                                                                       |
+| `assign` / `until`           | 出力を状態に足して後ろのノードに渡す / 終わるまでノードを繰り返す（検査 → 修正）                                                                                                                 |
+| `parallel`                   | 同じ入力で複数のノードを同時に走らせ、出力を同じキーで返す（チェックリストの各項目など）                                                                                                         |
+| `forEach`                    | リストの各項目にノードを走らせ（同時に `concurrency` 個まで）、出力を項目の順で返す（計画役が挙げたタスクなど）                                                                                  |
+| `branch`                     | 関数が入力ごとに選んだノードを 1 つ走らせる（通れば出荷・落ちれば修正、易しければ安いモデル）                                                                                                    |
+| `worktree`                   | ノードを専用ブランチの git worktree で走らせ、変更をコミットできる。書き込むエージェントを並べて走らせるため                                                                                     |
+| `run` / `FsStore`            | 実行と、`<dir>/<runId>/` への出力・`events.jsonl`（開始・終了・コスト・エラー・エージェントの動き）の保存                                                                                        |
+| `Stop`                       | やることのないノードが投げる。実行を成功のまま打ち切る（`status: "stopped"`）                                                                                                                    |
+| `exec`                       | コマンドを走らせ、終了コードを結果として返す（テストなどの検査に使う）                                                                                                                           |
 
 - 同じ run ID で走らせ直すと、`checkpoint` の付いたノードは保存した出力を返す。前のノードが
   走り直して入力が変わったノードは走り直す。特定のノードからやり直すときは `store.invalidate`
@@ -99,6 +99,9 @@ JSON Schema にしてエージェントに渡し、答えをそれで検証す�
   エージェントは止められない。ACP に構造化出力はないので、スキーマはプロンプトに入れ、答えの文章から JSON を取り出す。
   `model` は、エージェントにモデルの設定があればそれを切り替える。`meta` はセッションの `_meta` としてエージェントに渡す
   （そのエージェントにしかない設定用）
+- `agyRuntime({ addDirs, agent, sandbox })` は Antigravity の CLI を ACP サーバー（`agy acp`）で動かす。動きは
+  `acpRuntime` と同じ。先に `agy` か `agy acp --login` でサインインするか、`env` に `GEMINI_API_KEY` を渡す。
+  `--dangerously-skip-permissions` は `access` が拒むことまでエージェントにさせてしまうので、オプションにしていない
 - `defineRuntime` はアダプタから実行環境を作る（ほかのエージェントやテスト用）。呼び出しには呼んだノードの名前
   （`node`）が入るので、ノードごとに呼び出しを見せたり記録したりする実行環境で使える
 

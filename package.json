@@ -1,11 +1,13 @@
 {
   "name": "ayaito",
   "version": "0.2.0",
-  "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex, opencode or any ACP agent.",
+  "description": "A small engine for building typed agent workflows as graphs, on Claude, Codex, opencode, Antigravity (agy) or any ACP agent.",
   "keywords": [
     "acp",
     "agent",
     "agent-client-protocol",
+    "agy",
+    "antigravity",
     "claude",
     "claude-agent-sdk",
     "codex",
@@ -34,6 +36,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./acp": "./dist/acp.mjs",
+    "./agy": "./dist/agy.mjs",
     "./claude": "./dist/claude.mjs",
     "./cli": "./dist/cli.mjs",
     "./codex": "./dist/codex.mjs",
