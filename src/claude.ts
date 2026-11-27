@@ -45,7 +45,7 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
     async run(request) {
       request.signal?.throwIfAborted();
       const abortController = new AbortController();
-      const options: Options = { ...defaultOptions, env: childEnv(), ...base, abortController };
+      const options: Options = { ...defaultOptions, ...base, env: childEnv(base.env), abortController };
       if (request.cwd) options.cwd = request.cwd;
       if (request.model) options.model = request.model;
       if (request.system) options.systemPrompt = request.system;
@@ -128,9 +128,10 @@ function usage(result: Extract<SDKMessage, { type: "result" }>): Usage {
 }
 
 /**
- * The environment without the session of a Claude Code that runs this process: inherited, it
- * gives every call that session's id, so that parallel calls and resumes share one session.
+ * The environment, with the caller's env over it, without the session of a Claude Code that runs
+ * this process: inherited, it gives every call that session's id, so that parallel calls and
+ * resumes share one session. It is dropped even from env, where `{ ...process.env }` puts it back.
  */
-function childEnv(): Record<string, string | undefined> {
-  return { ...process.env, CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_REMOTE_SESSION_ID: undefined };
+function childEnv(env?: Options["env"]): Record<string, string | undefined> {
+  return { ...process.env, ...env, CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_REMOTE_SESSION_ID: undefined };
 }
