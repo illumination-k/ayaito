@@ -94,11 +94,12 @@ server, the command of an ACP agent. A request's `access` replaces the tools and
 
 - `agentNode` returns the validated output. An answer that misses the schema goes back to the same session,
   up to `attempts` calls (default 1); then the node throws.
-- `refineNode` adds `check(result, input, attempt)`, a deterministic judge (a quote the source does not contain,
+- `refineNode` adds `check(result, input, attempt, ctx)`, a deterministic judge (a quote the source does not contain,
   a test that fails) that returns `{ ok: true, value }` or `{ ok: false, feedback }`. Feedback goes back to the
   same session, up to `maxAttempts` calls. The node's output is the `RefineResult`: running out of attempts is a
   result (`{ ok: false, feedback }`), not an error, so a later node can record what never passed. `refine`
-  does the same outside a flow.
+  does the same outside a flow. `ctx` is the node's context: pass `ctx.signal` to what `check` starts
+  (`exec(cmd, args, { signal: ctx.signal })`), so that stopping the run stops it too.
 - Codex needs every object strict (`z.strictObject`). Do not use tuples (the Claude CLI validates with draft-07
   and the API with 2020-12, and one of them rejects them).
 - `acpRuntime({ command, args })` starts an ACP agent as a child process and shares it between calls. `access`

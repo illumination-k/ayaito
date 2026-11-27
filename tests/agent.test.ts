@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   agentNode,
   defineRuntime,
+  exec,
   FsStore,
   type RawRequest,
   type RawResult,
@@ -146,6 +147,75 @@ describe("refineNode", () => {
     );
     expect(output).toEqual({ ok: false, feedback: "no: b", attempts: 2, sessionId: "s1" });
     expect(seen).toHaveLength(2);
+  });
+
+  it("passes the node's ctx to check, whose signal aborts with the run", async () => {
+    const { runtime } = scripted([{ quote: "a" }]);
+    const controller = new AbortController();
+    let aborted = false;
+    const node = refineNode(
+      "cite",
+      {
+        prompt: () => "cite",
+        output: out,
+        check: (_r, _input, _attempt, ctx) =>
+          new Promise<never>((_, reject) => {
+            ctx.signal.addEventListener(
+              "abort",
+              () => {
+                aborted = true;
+                reject(ctx.signal.reason as Error);
+              },
+              { once: true },
+            );
+            controller.abort(new Error("stopped"));
+          }),
+        maxAttempts: 1,
+      },
+      runtime,
+    );
+    await expect(run(node, 0, { runId: "r", store: await tmpStore(), signal: controller.signal })).rejects.toThrow(
+      "stopped",
+    );
+    expect(aborted).toBe(true);
+  });
+
+  it("kills a process check started with ctx.signal when the run stops", async () => {
+    const { runtime } = scripted([{ quote: "a" }]);
+    const controller = new AbortController();
+    const pidFile = join(await mkdtemp(join(tmpdir(), "ayaito-")), "pid");
+    const script = `require("fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 30000);`;
+    const node = refineNode(
+      "test",
+      {
+        prompt: () => "fix",
+        output: out,
+        check: async (_r, _input, _attempt, ctx) => {
+          const { code } = await exec(process.execPath, ["-e", script], { signal: ctx.signal });
+          return code === 0 ? { ok: true, value: "passed" } : { ok: false, feedback: "failed" };
+        },
+        maxAttempts: 1,
+      },
+      runtime,
+    );
+    const done = run(node, 0, { runId: "r", store: await tmpStore(), signal: controller.signal });
+    let pid: number | undefined;
+    while (pid === undefined) {
+      pid = Number(await readFile(pidFile, "utf8").catch(() => "")) || undefined;
+      if (pid === undefined) await new Promise((r) => setTimeout(r, 20));
+    }
+    controller.abort(new Error("stopped"));
+    await expect(done).rejects.toThrow();
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(alive()).toBe(false);
   });
 });
 

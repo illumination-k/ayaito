@@ -92,10 +92,11 @@ JSON Schema にしてエージェントに渡し、答えをそれで検証す�
 
 - `agentNode` は検証済みの出力を返す。スキーマに合わない答えは同じセッションに返し、`attempts` 回
   （既定 1）まで呼ぶ。それでも合わなければ例外にする
-- `refineNode` は `check(result, input, attempt)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
+- `refineNode` は `check(result, input, attempt, ctx)` を足す。決まった手順の判定（原文にない引用、落ちるテストなど）で、
   `{ ok: true, value }` か `{ ok: false, feedback }` を返す。feedback は同じセッションに返し、`maxAttempts` 回まで呼ぶ。
   ノードの出力は `RefineResult` で、使い切っても例外にせず結果（`{ ok: false, feedback }`）として返すので、
-  後ろのノードで通らなかったものを記録できる。フローの外では `refine` で同じことをする
+  後ろのノードで通らなかったものを記録できる。フローの外では `refine` で同じことをする。`ctx` はノードのコンテキストで、
+  `check` が起動するもの（`exec(cmd, args, { signal: ctx.signal })`）に `ctx.signal` を渡せば、実行を止めたときに一緒に止まる
 - Codex ではオブジェクトをすべて strict にする（`z.strictObject`）。タプルは使わない（Claude の CLI は draft-07、
   API は 2020-12 で検証し、どちらかで落ちる）
 - `acpRuntime({ command, args })` は ACP のエージェントを子プロセスとして起動し、呼び出しの間で共有する。`access` は
