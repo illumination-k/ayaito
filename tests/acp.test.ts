@@ -24,6 +24,8 @@ interface Turn {
   asks?: ToolKind;
   /** The cost of the session after the turn. */
   cost?: number;
+  currency?: string;
+  stopReason?: "end_turn" | "max_tokens" | "refusal";
   usage?: Usage;
   /** Waits for session/cancel instead of answering. */
   hangs?: boolean;
@@ -109,11 +111,11 @@ function fakeAgent(turns: Turn[], capabilities: AgentCapabilities = {}, options:
         }
       }
       if (turn.cost !== undefined) {
-        const cost = { amount: turn.cost, currency: "USD" };
+        const cost = { amount: turn.cost, currency: turn.currency ?? "USD" };
         const update = { sessionUpdate: "usage_update" as const, used: 1, size: 2, cost };
         await client.notify(methods.client.session.update, { sessionId, update });
       }
-      return { stopReason: "end_turn" as const, usage: turn.usage };
+      return { stopReason: turn.stopReason ?? "end_turn", usage: turn.usage };
     });
   const runtime = acpRuntime({ command: "fake", ...options }, (client) => ({
     connection: client.connect(app),
@@ -245,6 +247,22 @@ describe("acpRuntime", () => {
     const seen: unknown[] = [];
     await runtime.run({ prompt: "go", onActivity: (activity) => seen.push(activity) });
     expect(seen).toEqual([{ text: "I will look." }, { tool: "tool", text: "tool" }, { text: "It is done." }]);
+  });
+
+  it("reports no message that is only white space", async () => {
+    const { runtime } = fakeAgent([{ says: ["  ", "done"] }]);
+    const seen: unknown[] = [];
+    await runtime.run({ prompt: "go", onActivity: (activity) => seen.push(activity) });
+    expect(seen).toEqual([{ tool: "tool", text: "tool" }, { text: "done" }]);
+  });
+
+  it("fails a turn that does not end, and counts only a cost in USD", async () => {
+    const { runtime } = fakeAgent([
+      { says: ["half"], stopReason: "max_tokens" },
+      { says: ["ok"], cost: 3, currency: "EUR" },
+    ]);
+    await expect(runtime.run({ prompt: "" })).rejects.toThrow("acp: the turn ended with max_tokens");
+    expect((await runtime.run({ prompt: "" })).costUsd).toBeUndefined();
   });
 
   it("cancels the turn when the signal aborts", async () => {

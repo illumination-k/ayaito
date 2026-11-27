@@ -50,6 +50,9 @@ describe("codexRuntime", () => {
       { type: "turn.started" },
       message("thinking"),
       message('{"topic":"a"}'),
+      // Items after the answer that are not a finished message do not replace it.
+      { type: "item.started", item: { id: "c", type: "command_execution", command: "ls" } },
+      { type: "item.completed", item: { id: "r", type: "reasoning", text: "hm" } },
       { type: "turn.completed", usage },
     ]);
     const sessions: string[] = [];
@@ -68,7 +71,7 @@ describe("codexRuntime", () => {
       sessionId: "th1",
       models: { "gpt-x": { input: 70, output: 20, cacheRead: 30, cacheCreation: 5 } },
     });
-    expect(sessions).toContain("th1");
+    expect(sessions).toEqual(["th1"]);
     const [call] = await codex.seen();
     expect(call?.input).toMatch(/^pick/);
     expect(call?.args).toEqual(
@@ -80,13 +83,16 @@ describe("codexRuntime", () => {
 
   it("resumes a thread with write access, the system prompt as developer instructions", async () => {
     const codex = await fakeCodex([message("done")]);
+    const sessions: string[] = [];
     const answer = await codexRuntime({ codexPathOverride: codex.path }).run({
       prompt: "go",
       system: "be brief",
       access: "write",
       sessionId: "old",
+      onSession: (id) => sessions.push(id),
     });
     expect(answer).toMatchObject({ text: "done", sessionId: "old" });
+    expect(sessions).toEqual(["old"]);
     expect(answer.models).toBeUndefined();
     const [call] = await codex.seen();
     expect(call?.args).toEqual(expect.arrayContaining(["--sandbox", "danger-full-access", "resume", "old"]));
@@ -135,7 +141,14 @@ describe("codexRuntime", () => {
       .run({ prompt: "", output: z.object({ topic: z.string() }) })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(OutputError);
-    expect(error).toMatchObject({ sessionId: "th1", usage: { models: { codex: { input: 70 } } } });
+    expect(error).toMatchObject({
+      sessionId: "th1",
+      message: expect.stringContaining("- (root): the answer could not be parsed as JSON"),
+      usage: { models: { codex: { input: 70 } } },
+    });
+
+    const silent = await fakeCodex([started]);
+    expect(await codexRuntime({ codexPathOverride: silent.path }).run({ prompt: "" })).toMatchObject({ text: "" });
 
     const nothing = await fakeCodex([message("hi")]);
     await expect(codexRuntime({ codexPathOverride: nothing.path }).run({ prompt: "" })).rejects.toThrow(
