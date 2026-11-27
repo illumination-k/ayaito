@@ -149,9 +149,14 @@ in another language: `JSON.stringify(graphSchema)`.
 
 ### From the command line
 
-`ayaito run flow.ts` runs the flow a file exports as default and saves the run under `.runs/<run id>/`, with the
+`ayaito run flow.ts` runs the flow a file exports as default and saves the run under `<store>/<run id>/`, with the
 result as `result.json`; `ayaito graph flow.ts` prints its graph as JSON (`--mermaid` for a flowchart). Node
 runs a `.ts` file by stripping its types (22.18 or later).
+
+Without `--store`, the store is outside the working tree: `ayaito-runs` in the repository's git common dir
+(`git rev-parse --git-common-dir`), so that runs never show in `git status` and every worktree of the
+repository sees the same ones; outside git, `$XDG_STATE_HOME/ayaito/runs` (`~/.local/state/ayaito/runs`). A
+run that is already in `./.runs`, where 0.2.0 and earlier kept them, is still found there.
 
 ```bash
 npx ayaito run flow.ts --run-id weekly --input '{"site":"blog"}'   # the same run id resumes the run
