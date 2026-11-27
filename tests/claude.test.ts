@@ -1,4 +1,8 @@
-import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import type { CanUseTool, Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
@@ -76,6 +80,62 @@ describe("claudeRuntime", () => {
       allowedTools: ["Read", "Glob", "Grep"],
       permissionMode: "dontAsk",
     });
+    expect(seen[0]?.options?.canUseTool).toBeUndefined();
+  });
+
+  describe("write access", () => {
+    const ask = (options: Options | undefined, tool: string, input: Record<string, unknown>) =>
+      options!.canUseTool!(tool, input, {
+        signal: new AbortController().signal,
+        toolUseID: "t",
+      } as Parameters<CanUseTool>[2]);
+    const withWorktree = async (test: (dirs: { cwd: string; outside: string }) => Promise<void>) => {
+      const home = mkdtempSync(join(tmpdir(), "ayaito-"));
+      try {
+        const cwd = join(home, ".claude", "worktrees", "w");
+        const outside = join(home, "outside");
+        mkdirSync(join(cwd, "src"), { recursive: true });
+        mkdirSync(outside);
+        await test({ cwd, outside });
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    };
+    const run = async (cwd: string, base: Options = {}) => {
+      const seen: { prompt: string; options?: Options }[] = [];
+      await claudeRuntime(base, fakeQuery(result({}), seen)).run({ prompt: "", access: "write", cwd });
+      return seen[0]?.options;
+    };
+
+    it("does not use dontAsk and allows edits inside a cwd under .claude", () =>
+      withWorktree(async ({ cwd }) => {
+        const options = await run(cwd);
+        expect(options).toMatchObject({
+          permissionMode: "default",
+          tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash"],
+          allowedTools: ["Read", "Glob", "Grep", "Bash"],
+        });
+        expect(await ask(options, "Edit", { file_path: join(cwd, "src/a.ts") })).toMatchObject({ behavior: "allow" });
+        expect(await ask(options, "Write", { file_path: "src/new/b.ts" })).toMatchObject({ behavior: "allow" });
+        expect(await ask(options, "Bash", { command: "ls" })).toMatchObject({ behavior: "allow" });
+      }));
+
+    it("denies edits outside cwd, through a symlink that leaves it, and other tools", () =>
+      withWorktree(async ({ cwd, outside }) => {
+        symlinkSync(outside, join(cwd, "link"));
+        const options = await run(cwd);
+        const denied = { behavior: "deny" };
+        expect(await ask(options, "Edit", { file_path: join(outside, "a.ts") })).toMatchObject(denied);
+        expect(await ask(options, "Write", { file_path: "../x.ts" })).toMatchObject(denied);
+        expect(await ask(options, "Write", { file_path: join(cwd, "link", "a.ts") })).toMatchObject(denied);
+        expect(await ask(options, "WebFetch", { url: "https://example.com" })).toMatchObject(denied);
+      }));
+
+    it("uses a caller's own canUseTool as given", () =>
+      withWorktree(async ({ cwd }) => {
+        const canUseTool: CanUseTool = async () => ({ behavior: "deny", message: "mine" });
+        expect((await run(cwd, { canUseTool }))?.canUseTool).toBe(canUseTool);
+      }));
   });
 
   it("reports what the agent says and the tools it calls", async () => {
@@ -126,6 +186,19 @@ describe("claudeRuntime", () => {
       delete process.env.CLAUDE_CODE_SESSION_ID;
     }
     expect(seen[0]?.options?.env).toHaveProperty("CLAUDE_CODE_SESSION_ID", undefined);
+    expect(seen[0]?.options?.env?.PATH).toBe(process.env.PATH);
+  });
+
+  it("keeps the session out when options set env, over the inherited environment", async () => {
+    const seen: { prompt: string; options?: Options }[] = [];
+    process.env.CLAUDE_CODE_SESSION_ID = "parent";
+    try {
+      await claudeRuntime({ env: { ...process.env, X: "1" } }, fakeQuery(result({}), seen)).run({ prompt: "" });
+    } finally {
+      delete process.env.CLAUDE_CODE_SESSION_ID;
+    }
+    expect(seen[0]?.options?.env).toHaveProperty("CLAUDE_CODE_SESSION_ID", undefined);
+    expect(seen[0]?.options?.env?.X).toBe("1");
     expect(seen[0]?.options?.env?.PATH).toBe(process.env.PATH);
   });
 

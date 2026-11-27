@@ -74,7 +74,11 @@ export function agentNode<I, O>(
 export function refineNode<I, O = undefined, T = unknown>(
   name: string,
   config: AgentConfig<I, O> & {
-    check: (result: AgentResult<O>, input: I, attempt: number) => Verdict<T> | Promise<Verdict<T>>;
+    /**
+     * Judges an answer. ctx is the node's context: pass ctx.signal to what check starts (a
+     * test suite, a build), so that stopping the run stops it too.
+     */
+    check: (result: AgentResult<O>, input: I, attempt: number, ctx: Context) => Verdict<T> | Promise<Verdict<T>>;
     maxAttempts: number;
   },
   runtime: AgentRuntime,
@@ -95,7 +99,7 @@ export function refineNode<I, O = undefined, T = unknown>(
         runtime: metered(runtime, name, ctx, listen),
         request: { ...request, cwd: request.cwd ?? ctx.cwd, prompt: prompt(input), node: name, signal: ctx.signal },
         check: async (result, attempt) => {
-          const verdict = await check(result, input, attempt);
+          const verdict = await check(result, input, attempt, ctx);
           if (!verdict.ok) ctx.emit({ type: "retry", node: name, attempt, error: verdict.feedback });
           return verdict;
         },

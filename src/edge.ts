@@ -45,21 +45,33 @@ export function effect(fn: (output: unknown, ctx: Context, node: string) => void
 }
 
 /**
+ * Saves the output under the node name and a hash of key(input, ctx). Running the same run
+ * again returns the saved output instead of running the node when the key is the same, so the
+ * key decides what the output depends on: drop the fields the node does not read (a round
+ * counter, a log of earlier rounds), or add what it reads outside its input (a hash of the
+ * working tree). key may be async. The stored entry still holds the whole input, to show what
+ * ran.
+ */
+export function checkpointBy<I = any>(key: (input: I, ctx: Context) => unknown): Middleware {
+  return named("checkpoint", (node, next) => async (input, ctx) => {
+    const k = checkpointKey(node.name, await key(input as never, ctx));
+    const saved = (await ctx.store.get(ctx.runId, k)) as { output: never } | undefined;
+    if (saved !== undefined) {
+      ctx.emit({ type: "skip", node: node.name, reason: `checkpoint ${k}` });
+      return saved.output;
+    }
+    const output = await next(input, ctx);
+    await ctx.store.put(ctx.runId, k, { input, output });
+    return output;
+  });
+}
+
+/**
  * Saves the output under the node name and a hash of the input. Running the same run again
  * returns the saved output instead of running the node, so a failed run resumes where it
  * stopped. A node whose input changed (because an earlier node ran again) runs again.
  */
-export const checkpoint: Middleware = (node, next) => async (input, ctx) => {
-  const key = checkpointKey(node.name, input);
-  const saved = (await ctx.store.get(ctx.runId, key)) as { output: never } | undefined;
-  if (saved !== undefined) {
-    ctx.emit({ type: "skip", node: node.name, reason: `checkpoint ${key}` });
-    return saved.output;
-  }
-  const output = await next(input, ctx);
-  await ctx.store.put(ctx.runId, key, { input, output });
-  return output;
-};
+export const checkpoint: Middleware = checkpointBy((input) => input);
 
 /**
  * Names a middleware for drawing (toMermaid). A middleware is otherwise drawn by its function

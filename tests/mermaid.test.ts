@@ -7,10 +7,12 @@ import {
   branch,
   budget,
   checkpoint,
+  checkpointBy,
   defineRuntime,
   fnNode,
   Flow,
   forEach,
+  named,
   parallel,
   retry,
   timeout,
@@ -72,6 +74,29 @@ describe("toMermaid", () => {
     );
   });
 
+  it("draws checkpointBy as checkpoint unless named", () => {
+    const flow = Flow.start<number>("f")
+      .then(
+        fnNode("a", async (n: number) => n),
+        { use: [checkpointBy((n) => n)] },
+      )
+      .then(
+        fnNode("b", async (n: number) => n),
+        {
+          use: [
+            named(
+              "checkpoint by topic",
+              checkpointBy((n) => n),
+            ),
+          ],
+        },
+      )
+      .build();
+
+    expect(toMermaid(flow)).toContain('|"checkpoint"|');
+    expect(toMermaid(flow)).toContain('|"checkpoint by topic"|');
+  });
+
   it("draws a nested flow as a subgraph and keeps the edge into it", () => {
     const inner = Flow.start<number>("inner")
       .then(fnNode("a", async (n: number) => n))
@@ -129,6 +154,16 @@ describe("toMermaid", () => {
 
     expect(toMermaid(parallel("review", nodes, { failFast: false }))).toContain('subgraph s0["review (all finish)"]');
     expect(toMermaid(parallel("review", nodes))).toContain('subgraph s0["review"]');
+  });
+
+  it("labels a forEach whose items all finish when one fails", () => {
+    const item = fnNode("item", async (n: number) => n);
+
+    expect(toMermaid(forEach("each", item, { failFast: false }))).toContain(
+      'subgraph s0["each (each item, all finish)"]',
+    );
+    expect(toMermaid(forEach("each", item, { concurrency: 2, failFast: false }))).toContain('subgraph s0["each (each item, 2 at a time, all finish)"]'); // prettier-ignore
+    expect(toMermaid(forEach("each", item))).toContain('subgraph s0["each (each item)"]');
   });
 
   it("draws a node without a shape as code and escapes quotes", () => {

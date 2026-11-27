@@ -1,5 +1,5 @@
 export { agentNode, refineNode, type AgentConfig } from "./agent.ts";
-export { checkpoint, checkpointKey, effect, named, retry, type Edge, type Middleware } from "./edge.ts";
+export { checkpoint, checkpointBy, checkpointKey, effect, named, retry, type Edge, type Middleware } from "./edge.ts";
 export { exec, type ExecResult } from "./exec.ts";
 export { assign, branch, Flow, forEach, parallel, until } from "./flow.ts";
 export { budget, BudgetError, timeout, TimeoutError, type Budget, type Spent } from "./limits.ts";

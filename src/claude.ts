@@ -1,4 +1,8 @@
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+
 import {
+  type CanUseTool,
   createSdkMcpServer,
   type Options,
   query as sdkQuery,
@@ -33,6 +37,7 @@ const READ = ["Read", "Glob", "Grep"];
 // Waits this long for an interrupted turn to end before stopping the process.
 const INTERRUPT_MS = 10_000;
 const TOOLS: Record<Access, string[]> = { "read-only": READ, write: [...READ, "Edit", "Write", "Bash"] };
+const EDIT = new Set(["Edit", "Write"]);
 
 /**
  * Runs calls through the Claude Agent SDK with options (allowedTools, permissionMode,
@@ -45,16 +50,23 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
     async run(request) {
       request.signal?.throwIfAborted();
       const abortController = new AbortController();
-      const options: Options = { ...defaultOptions, env: childEnv(), ...base, abortController };
+      const options: Options = { ...defaultOptions, ...base, env: childEnv(base.env), abortController };
       if (request.cwd) options.cwd = request.cwd;
       if (request.model) options.model = request.model;
       if (request.system) options.systemPrompt = request.system;
       if (request.sessionId) options.resume = request.sessionId;
-      if (request.access) {
-        options.tools = TOOLS[request.access];
-        options.allowedTools = TOOLS[request.access];
+      if (request.access === "read-only") {
+        options.tools = READ;
+        options.allowedTools = READ;
         // dontAsk, not bypassPermissions: Claude Code will not bypass as root (as in many containers).
         options.permissionMode = "dontAsk";
+      } else if (request.access === "write") {
+        options.tools = TOOLS.write;
+        // Edit and Write are left to canUseTool. dontAsk refuses every edit under a .claude
+        // directory, whatever allowedTools says, so it cannot work in a worktree kept there.
+        options.allowedTools = TOOLS.write.filter((tool) => !EDIT.has(tool));
+        options.permissionMode = "default";
+        options.canUseTool ??= confine(options.cwd ?? process.cwd(), TOOLS.write);
       }
       if (mcpTools?.length) {
         options.mcpServers = { ...options.mcpServers, ayaito: createSdkMcpServer({ name: "ayaito", tools: mcpTools }) };
@@ -110,6 +122,40 @@ export function claudeRuntime({ mcpTools, ...base }: ClaudeRuntimeOptions = {}, 
   });
 }
 
+/**
+ * Answers every permission request of a write-access call, as nothing answers a prompt in an
+ * unattended run: the access level's tools and ayaito's own are allowed, Edit and Write only for
+ * a file whose real path (symlinks resolved) is inside cwd, and everything else is denied.
+ */
+export function confine(cwd: string, tools: string[]): CanUseTool {
+  const root = realPath(resolve(cwd));
+  return async (toolName, input) => {
+    if (EDIT.has(toolName)) {
+      const file = typeof input.file_path === "string" ? input.file_path : undefined;
+      if (file === undefined) return { behavior: "deny", message: `${toolName}: no file_path` };
+      const rel = relative(root, realPath(resolve(root, file)));
+      if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        return { behavior: "deny", message: `${toolName}: ${file} is outside the working directory ${cwd}` };
+      }
+      return { behavior: "allow", updatedInput: input };
+    }
+    if (tools.includes(toolName) || toolName.startsWith("mcp__ayaito__")) {
+      return { behavior: "allow", updatedInput: input };
+    }
+    return { behavior: "deny", message: `${toolName} is not allowed with write access` };
+  };
+}
+
+/** The real path of a file that may not exist yet: that of its nearest existing ancestor, plus the rest. */
+function realPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realPath(parent), basename(path));
+  }
+}
+
 function usage(result: Extract<SDKMessage, { type: "result" }>): Usage {
   return {
     costUsd: result.total_cost_usd,
@@ -128,9 +174,10 @@ function usage(result: Extract<SDKMessage, { type: "result" }>): Usage {
 }
 
 /**
- * The environment without the session of a Claude Code that runs this process: inherited, it
- * gives every call that session's id, so that parallel calls and resumes share one session.
+ * The environment, with the caller's env over it, without the session of a Claude Code that runs
+ * this process: inherited, it gives every call that session's id, so that parallel calls and
+ * resumes share one session. It is dropped even from env, where `{ ...process.env }` puts it back.
  */
-function childEnv(): Record<string, string | undefined> {
-  return { ...process.env, CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_REMOTE_SESSION_ID: undefined };
+function childEnv(env?: Options["env"]): Record<string, string | undefined> {
+  return { ...process.env, ...env, CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_REMOTE_SESSION_ID: undefined };
 }

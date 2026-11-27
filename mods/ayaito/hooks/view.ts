@@ -159,7 +159,8 @@ export function view(dir: string, runId: string, graph: Graph, events: RunEvent[
       const detail = [
         n.assign !== undefined && `→ ${n.assign}`,
         n.worktree && "worktree",
-        n.kind === "forEach" && `each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`}`,
+        n.kind === "forEach" &&
+          `each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`}${n.failFast === false ? ", all finish" : ""}`,
         n.kind === "until" && `at most ${n.max}`,
         n.kind === "parallel" && (n.failFast === false ? "parallel, all finish" : "parallel"),
         ...new Set(graph.edges.filter((e) => e.to === n.id).flatMap((e) => e.use ?? [])),

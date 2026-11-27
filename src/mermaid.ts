@@ -51,8 +51,10 @@ function title(n: GraphNode): string {
   let text = n.key === undefined || n.key === n.label ? n.label : `${n.key}: ${n.label}`;
   if (n.assign !== undefined) text += ` → ${n.assign}`;
   if (n.worktree) text += " (worktree)";
-  if (n.kind === "forEach") text += ` (each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`})`;
-  if (n.failFast === false) text += " (all finish)";
+  const all = n.failFast === false ? ", all finish" : "";
+  if (n.kind === "forEach")
+    text += ` (each item${n.concurrency === undefined ? "" : `, ${n.concurrency} at a time`}${all})`;
+  else if (n.failFast === false) text += " (all finish)";
   if (n.kind === "until") text += ` (at most ${n.max})`;
   return text;
 }
