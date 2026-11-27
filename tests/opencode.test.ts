@@ -227,7 +227,8 @@ describe("opencodeRuntime", () => {
       { tool: "read", text: '{"path":"a.ts"}' },
     ]);
     const [updated] = sent("PATCH", "/session/old");
-    expect((updated?.body?.permission as { permission: string }[]).map((p) => p.permission)).toEqual([
+    const permission = (updated?.body?.permission ?? []) as { permission: string }[];
+    expect(permission.map((p) => p.permission)).toEqual([
       "*",
       "read",
       "glob",
