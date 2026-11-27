@@ -42,7 +42,7 @@ export interface InWorktree<O> {
 export function worktree<I, O>(node: Node<I, O>, opts: WorktreeOptions<I, O> = {}): Node<I, InWorktree<O>> {
   return {
     name: node.name,
-    shape: { kind: "worktree", node: node as Node<never, unknown> },
+    shape: { kind: "worktree", node },
     run: async (input, ctx) => {
       const repo = resolve(opts.repo ?? ctx.cwd ?? process.cwd());
       const branch = opts.branch?.(input, ctx) ?? defaultBranch(node.name, input, ctx.runId);

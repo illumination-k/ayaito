@@ -197,6 +197,18 @@ describe("acpRuntime", () => {
     await expect(unable.runtime.run({ prompt: "", sessionId: "old" })).rejects.toThrow("cannot resume session old");
   });
 
+  it.each([
+    ['{"topic":"a"}', { topic: "a" }],
+    ['```\n{"topic":"a"}\n```', { topic: "a" }],
+    ['```json  \n{"topic":"a"}\n```', { topic: "a" }],
+    ['The answer is {"topic":"a"}. Done.', { topic: "a" }],
+    ['Here: [{"topic":"a"},{"topic":"b"}]', [{ topic: "a" }, { topic: "b" }]],
+  ])("finds the JSON in %j", async (text, structured) => {
+    const { runtime } = fakeAgent([{ says: [text] }]);
+    const output = z.union([z.object({ topic: z.string() }), z.array(z.object({ topic: z.string() }))]);
+    expect(await runtime.run({ prompt: "", output })).toMatchObject({ structured });
+  });
+
   it("throws an OutputError that keeps the session when the answer is not JSON", async () => {
     const { runtime } = fakeAgent([{ says: ["I could not decide."], cost: 0.1 }]);
     const error = await runtime.run({ prompt: "", output: z.object({ topic: z.string() }) }).catch((e: unknown) => e);

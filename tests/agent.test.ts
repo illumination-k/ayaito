@@ -255,7 +255,7 @@ describe("refineNode", () => {
       if (pid === undefined) await new Promise((r) => setTimeout(r, 20));
     }
     controller.abort(new Error("stopped"));
-    await expect(done).rejects.toThrow();
+    await expect(done).rejects.toThrow("The operation was aborted");
     const alive = () => {
       try {
         process.kill(pid, 0);

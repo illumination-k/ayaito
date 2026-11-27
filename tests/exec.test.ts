@@ -9,6 +9,6 @@ describe("exec", () => {
       stdout: "hi\n",
       stderr: "",
     });
-    await expect(exec("ayaito-no-such-command", [])).rejects.toThrow();
+    await expect(exec("ayaito-no-such-command", [])).rejects.toThrow("ENOENT");
   });
 });

@@ -24,10 +24,10 @@ export class Flow<I, O> {
   // A Flow is built, never awaited; `then` reads as the next step.
   // oxlint-disable-next-line unicorn/no-thenable
   then<A, P>(node: Node<A, P>, ...[edge]: EdgeArg<O, A>): Flow<I, P> {
-    const map = edge?.map as ((o: O, ctx: Context) => A | Promise<A>) | undefined;
+    const map = edge?.map;
     const use = edge?.use ?? [];
     const run = wrap(node, use);
-    const step: Step = { node: node as Node<never, unknown>, map: map !== undefined, use: use.map(middlewareName) };
+    const step: Step = { node, map: map !== undefined, use: use.map(middlewareName) };
     return new Flow<I, P>(
       this.name,
       async (input, ctx) => {
@@ -78,7 +78,7 @@ export function until<A>(name: string, body: Node<A, A>, done: (a: A) => boolean
   const run = wrap(body, []);
   return {
     name,
-    shape: { kind: "until", body: body as Node<never, unknown>, max },
+    shape: { kind: "until", body, max },
     run: async (input, ctx) => {
       let a = input;
       for (let i = 0; i < max; i++) {
@@ -98,7 +98,7 @@ export function until<A>(name: string, body: Node<A, A>, done: (a: A) => boolean
 export function assign<S extends object, K extends string, O>(key: K, node: Node<S, O>): Node<S, S & { [P in K]: O }> {
   return {
     name: node.name,
-    shape: { kind: "assign", key, node: node as Node<never, unknown> },
+    shape: { kind: "assign", key, node },
     run: async (state, ctx) => ({ ...state, [key]: await node.run(state, ctx) }) as S & { [P in K]: O },
   };
 }
@@ -118,7 +118,7 @@ export function branch<I, K extends string, C extends Record<K, Node<I, unknown>
   const runs = new Map(Object.entries<Node<I, unknown>>(cases).map(([key, node]) => [key, wrap(node, [])]));
   return {
     name,
-    shape: { kind: "branch", cases: cases as Record<string, Node<never, unknown>> },
+    shape: { kind: "branch", cases },
     run: async (input, ctx) => {
       const key = await route(input, ctx);
       const run = runs.get(key);
@@ -152,7 +152,7 @@ export function forEach<T, O>(
     name,
     shape: {
       kind: "forEach",
-      body: node as Node<never, unknown>,
+      body: node,
       concurrency,
       ...(!failFast && { failFast }),
       use: (opts.use ?? []).map(middlewareName),
@@ -168,13 +168,14 @@ export function forEach<T, O>(
           // Each item's events carry its index, and its agents can be reached by it.
           const item = ctx.item === undefined ? String(i) : `${ctx.item}.${i}`;
           const emit: Context["emit"] = (event) => inner.emit({ item, ...event });
-          const output = run(items[i] as T, { ...inner, item, emit });
+          const output = run(items[i], { ...inner, item, emit });
           if (failFast) results[i] = { status: "fulfilled", value: await output };
-          else
+          else {
             results[i] = await output.then(
               (value) => ({ status: "fulfilled", value }),
               (reason: unknown) => ({ status: "rejected", reason }),
             );
+          }
         }
       };
       const workers = Array.from({ length: Math.min(concurrency ?? items.length, items.length) }, worker);
@@ -249,23 +250,26 @@ async function allSettled(
   ctx: Context,
 ): Promise<Record<string, unknown>> {
   const results = await Promise.allSettled(runs.map(([, run]) => run(input, ctx)));
-  const values = settle(name, results, (i) => ({ key: (runs[i] as (typeof runs)[number])[0] }), ctx.signal);
+  const values = settle(name, results, (i) => ({ key: runs[i][0] }), ctx.signal);
   return Object.fromEntries(runs.map(([key], i) => [key, values[i]]));
 }
+
+/** What a failed member of parallel (its key) or forEach (its index) was. */
+type Label = { key: string } | { item: number };
 
 /**
  * The outputs of members that all ran to their end (parallel or forEach without failFast),
  * or an AggregateError with every failure, in order, each with what `label` says it was.
  */
-function settle<L extends { key: string } | { item: number }>(
+function settle(
   name: string,
   results: PromiseSettledResult<unknown>[],
-  label: (i: number) => L,
+  label: (i: number) => Label,
   signal: AbortSignal,
 ): unknown[] {
   // The run was cancelled (a stop, a timeout, a spent budget): that is why the members failed.
   signal.throwIfAborted();
-  const errors: (Error & L)[] = [];
+  const errors: (Error & Label)[] = [];
   let stop: Stop | undefined;
   for (const [i, result] of results.entries()) {
     if (result.status === "fulfilled") continue;

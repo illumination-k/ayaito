@@ -20,6 +20,7 @@ import {
   run,
   timeout,
   TimeoutError,
+  until,
 } from "../src/index.ts";
 
 const tmpStore = async () => new FsStore(await mkdtemp(join(tmpdir(), "ayaito-")));
@@ -44,6 +45,49 @@ describe("branch", () => {
       positive: fnNode("keep", async (n: number) => n),
     });
   });
+
+  it("throws when route returns a key with no case", async () => {
+    const pick = branch("pick", (key: string) => key as "a", { a: fnNode("a", async () => 1) });
+    await expect(run(pick, "b", { runId: "r", store: await tmpStore() })).rejects.toThrow('pick: no case for "b"');
+  });
+});
+
+describe("until", () => {
+  it("runs the body at most max times, and checks after the last", async () => {
+    let runs = 0;
+    const inc = fnNode("inc", async (n: number) => (runs++, n + 1));
+    const store = await tmpStore();
+    expect(
+      (
+        await run(
+          until("loop", inc, (n) => n >= 3, 3),
+          0,
+          { runId: "a", store },
+        )
+      ).output,
+    ).toBe(3);
+    expect(runs).toBe(3);
+    runs = 0;
+    expect(
+      (
+        await run(
+          until("loop", inc, (n) => n >= 0, 3),
+          0,
+          { runId: "b", store },
+        )
+      ).output,
+    ).toBe(0);
+    expect(runs).toBe(0);
+    runs = 0;
+    await expect(
+      run(
+        until("loop", inc, (n) => n >= 4, 3),
+        0,
+        { runId: "c", store },
+      ),
+    ).rejects.toThrow("loop: not done after 3 runs of inc");
+    expect(runs).toBe(3);
+  });
 });
 
 describe("forEach", () => {
@@ -65,6 +109,13 @@ describe("forEach", () => {
     expect(output).toEqual([900, 25, 100, 1]);
     expect(most).toBe(2);
     expect((await run(forEach("none", square), [], { runId: "e", store: await tmpStore() })).output).toEqual([]);
+  });
+
+  it("takes a concurrency of 1 or more", () => {
+    const item = fnNode("item", async (n: number) => n);
+    expect(() => forEach("each", item, { concurrency: 1 })).not.toThrow();
+    expect(() => forEach("each", item, { concurrency: 0 })).toThrow("each: concurrency must be at least 1");
+    expect(() => forEach("each", item, { concurrency: Number.NaN })).toThrow("concurrency must be at least 1");
   });
 
   it("aborts the other items when one fails, and resumes past the items that finished", async () => {
@@ -239,7 +290,7 @@ describe("budget", () => {
     });
     const node = refineNode(
       "refine",
-      { prompt: () => "", output: undefined as never, check: () => ({ ok: false, feedback: "again" }), maxAttempts: 5 },
+      { prompt: () => "", output: undefined, check: () => ({ ok: false, feedback: "again" }), maxAttempts: 5 },
       defineRuntime({ name: "plain", run: (r) => runtime.run({ ...r, output: undefined }) }),
     );
     const flow = Flow.start<number>("f")
@@ -278,7 +329,41 @@ describe("budget", () => {
   });
 });
 
+describe("budget", () => {
+  it("lets a node spend exactly the budget, and counts tokens", async () => {
+    const tokens = { input: 40, output: 50, cacheRead: 1000, cacheCreation: 10 };
+    const node = (usd: number) =>
+      fnNode("spender", async (n: number, ctx) => {
+        ctx.emit({ type: "usage", node: "spender", usd, models: { m: tokens } });
+        await sleep(1);
+        ctx.signal.throwIfAborted();
+        return n;
+      });
+    const flow = (usd: number, limits: Parameters<typeof budget>[0]) =>
+      Flow.start<number>("f")
+        .then(node(usd), { use: [budget(limits)] })
+        .build();
+    const store = await tmpStore();
+    await expect(run(flow(1, { usd: 1, tokens: 100 }), 0, { runId: "a", store })).resolves.toMatchObject({
+      status: "done",
+    });
+    await expect(run(flow(0, { tokens: 99 }), 0, { runId: "b", store })).rejects.toThrow(
+      "spender: over budget (spent 100 tokens of 99 tokens)",
+    );
+  });
+});
+
 describe("timeout", () => {
+  it("names itself by its duration", () => {
+    expect(timeout(120_000).name).toBe("timeout 2m");
+    expect(timeout(60_000).name).toBe("timeout 1m");
+    expect(timeout(90_000).name).toBe("timeout 90s");
+    expect(timeout(1000).name).toBe("timeout 1s");
+    expect(timeout(1500).name).toBe("timeout 1500ms");
+    expect(timeout(999).name).toBe("timeout 999ms");
+    expect(timeout(60_000, { wrapUp: { ms: 500 } }).name).toBe("timeout 1m + 500ms to wrap up");
+  });
+
   it("aborts the node and throws without waiting for it", async () => {
     let aborted = false;
     const slow = fnNode("slow", async (n: number, ctx) => {
