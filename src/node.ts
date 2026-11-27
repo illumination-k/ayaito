@@ -20,7 +20,7 @@ export type Shape =
   | { kind: "until"; body: Node<never, unknown>; max: number }
   | { kind: "assign"; key: string; node: Node<never, unknown> }
   | { kind: "branch"; cases: Record<string, Node<never, unknown>> }
-  | { kind: "forEach"; body: Node<never, unknown>; concurrency?: number; use: string[] }
+  | { kind: "forEach"; body: Node<never, unknown>; concurrency?: number; failFast?: false; use: string[] }
   | { kind: "worktree"; node: Node<never, unknown> };
 
 /** A node of a flow and the edge into it: whether it maps, and the names of its middleware. */

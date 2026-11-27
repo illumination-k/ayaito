@@ -131,6 +131,16 @@ describe("toMermaid", () => {
     expect(toMermaid(parallel("review", nodes))).toContain('subgraph s0["review"]');
   });
 
+  it("labels a forEach whose items all finish when one fails", () => {
+    const item = fnNode("item", async (n: number) => n);
+
+    expect(toMermaid(forEach("each", item, { failFast: false }))).toContain(
+      'subgraph s0["each (each item, all finish)"]',
+    );
+    expect(toMermaid(forEach("each", item, { concurrency: 2, failFast: false }))).toContain('subgraph s0["each (each item, 2 at a time, all finish)"]'); // prettier-ignore
+    expect(toMermaid(forEach("each", item))).toContain('subgraph s0["each (each item)"]');
+  });
+
   it("draws a node without a shape as code and escapes quotes", () => {
     expect(toMermaid({ name: 'say "hi"', run: async () => 1 })).toContain('n0["say #quot;hi#quot;"]');
   });

@@ -32,7 +32,7 @@ export interface GraphNode {
   key?: string;
   /** How many items run at once (forEach); absent when all do. */
   concurrency?: number;
-  /** Set when a failed node does not abort the others (parallel with failFast: false). */
+  /** Set when a failed node does not abort the others (parallel or forEach with failFast: false). */
   failFast?: false;
   /** How many times the body runs at most (until). */
   max?: number;
@@ -118,6 +118,7 @@ export function toGraph(node: Node<never, unknown>): Graph {
         const group = add({ id: id("s"), kind: "forEach", ...base }, parent, {
           ...extra,
           ...(shape.concurrency !== undefined && { concurrency: shape.concurrency }),
+          ...(shape.failFast === false && { failFast: false }),
         });
         return draw(shape.body, from, { ...into, use: [...into.use, ...shape.use] }, group);
       }
@@ -194,7 +195,7 @@ export const graphSchema = {
         concurrency: { type: "number", description: "How many items run at once (forEach); absent when all do." },
         failFast: {
           const: false,
-          description: "Set when a failed node does not abort the others (parallel with failFast: false).",
+          description: "Set when a failed node does not abort the others (parallel or forEach with failFast: false).",
         },
         max: { type: "number", description: "How many times the body runs at most (until)." },
       },
