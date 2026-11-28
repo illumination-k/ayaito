@@ -11,6 +11,7 @@ export default defineConfig({
       "src/claude.ts",
       "src/codex.ts",
       "src/opencode.ts",
+      "src/otel.ts",
     ],
     deps: {
       // tsdown <0.23 compatibility: resolve external dependency subpaths.

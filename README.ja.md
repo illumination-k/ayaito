@@ -121,6 +121,29 @@ JSON Schema にしてエージェントに渡し、答えをそれで検証す�
 - `defineRuntime` はアダプタから実行環境を作る（ほかのエージェントやテスト用）。呼び出しには呼んだノードの名前
   （`node`）が入るので、ノードごとに呼び出しを見せたり記録したりする実行環境で使える
 
+## OpenTelemetry でトレースする
+
+`runTraced`（`ayaito/otel`）は、実行を [OpenTelemetry](https://opentelemetry.io/) のトレースにも書き出す `run`。
+Langfuse・Grafana・Jaeger など OTLP を受ける先で見られる。`@opentelemetry/api` と、プロセスに登録した SDK が要る
+（SDK がなければ何も記録しない）。
+
+```ts
+import { runTraced } from "ayaito/otel";
+
+const result = await runTraced(flow, input, { runId, store: new FsStore(".runs") });
+```
+
+- 実行全体が一つのスパン（`invoke_workflow <flow>`）で、開始時にアクティブなスパンの子になる。始まったノードは
+  それを含むノードのスパンの子になり、時刻は `start` と `end` のイベントのもの。`forEach` の要素には `ayaito.item` が付く。
+- エージェントは GenAI のセマンティック規約（まだ開発中）に従う: `invoke_agent <node>`・`gen_ai.usage.*`
+  （規約ではキャッシュのトークンも入力に数える）・`gen_ai.response.model`・`gen_ai.conversation.id`（セッション）。
+  費用は `ayaito.usage.cost_usd`。実行のスパンには実行全体の使用量が付く。
+- 失敗したノードはエラーのスパンになる。リトライ・チェックポイントによるスキップ（`skip`）・ツールの呼び出し・
+  wrap-up・steer のメッセージは、ノードのスパンのイベントになる。
+- エージェントの発言・ツールの入力・steer のメッセージは、`content: true` を渡さない限りトレースに入れない。
+- `tracing(flow, { runId })` は `runTraced` が使う `log` と `end` を返す。保存済みの実行のイベント
+  （`store.events(runId)`）を渡せば、その実行を後から、イベントの時刻でトレースにできる。
+
 ## フローの図
 
 `toMermaid(flow)` はノードを [Mermaid](https://mermaid.js.org/) の flowchart にする（GitHub は README や PR の

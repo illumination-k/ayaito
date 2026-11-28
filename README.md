@@ -134,6 +134,31 @@ always left out, so that calls do not share it. To give flow agents their own lo
 - `defineRuntime` makes a runtime from an adapter, for another agent or a test. A request carries the name of
   the node making it (`node`), for a runtime that shows or records its calls per node.
 
+## Tracing with OpenTelemetry
+
+`runTraced` (`ayaito/otel`) is `run` that also writes the run as an [OpenTelemetry](https://opentelemetry.io/) trace,
+for Langfuse, Grafana, Jaeger or any backend that takes OTLP. It needs `@opentelemetry/api` and an SDK
+registered in the process; without one, nothing is recorded.
+
+```ts
+import { runTraced } from "ayaito/otel";
+
+const result = await runTraced(flow, input, { runId, store: new FsStore(".runs") });
+```
+
+- The run is one span (`invoke_workflow <flow>`) inside the span that is active when it starts, and each node
+  that starts is a span inside the node it runs in, timed by its `start` and `end` events. Items of a `forEach`
+  carry `ayaito.item`.
+- Agents follow the GenAI semantic conventions, which are still in development: `invoke_agent <node>`,
+  `gen_ai.usage.*` (cached tokens count as input tokens there), `gen_ai.response.model`,
+  `gen_ai.conversation.id` (the session). The cost is `ayaito.usage.cost_usd`. The run's span has the usage of
+  the whole run.
+- A failed node is an error span. Retries, checkpoint hits (`skip`), tool calls, wrap-ups and steered messages
+  are events of the node's span.
+- What agents say, the inputs of their tools and steered messages stay out of the trace unless `content: true`.
+- `tracing(flow, { runId })` returns the `log` and `end` that `runTraced` uses. Fed the events of a saved run
+  (`store.events(runId)`), it traces that run afterwards, with the times of its events.
+
 ## Drawing a flow
 
 `toMermaid(flow)` draws a node as a [Mermaid](https://mermaid.js.org/) flowchart, which GitHub renders in
