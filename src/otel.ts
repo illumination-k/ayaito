@@ -209,6 +209,23 @@ export function tracing(
       case "steer":
         find(name, item).span.addEvent("steer", content ? { message: event.message } : {}, at);
         return;
+      case "prompt": {
+        const { runtime, model, access, sessionId, text } = event;
+        const how = {
+          runtime,
+          ...(model !== undefined && { "gen_ai.request.model": model }),
+          ...(access !== undefined && { access }),
+          ...(sessionId !== undefined && { resumes: sessionId }),
+        };
+        find(name, item).span.addEvent("prompt", { ...how, ...(content && { text }) }, at);
+        return;
+      }
+      case "answer":
+        find(name, item).span.addEvent("answer", content ? { text: event.text } : {}, at);
+        return;
+      case "log":
+        find(name, item).span.addEvent("log", content ? { text: event.text } : {}, at);
+        return;
       case "activity": {
         const { span } = find(name, item);
         if (event.tool !== undefined) {

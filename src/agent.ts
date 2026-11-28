@@ -124,10 +124,13 @@ export function refineNode<I, O = undefined, T = unknown>(
   };
 }
 
-// An activity keeps this much of a message: events are for following the work, not for keeping it.
+// An activity keeps this much of a message: it is for following the work. What is asked and answered is kept whole.
 const SHOWN = 1000;
 
-/** Records the usage of every call (an interrupted one too), a schema miss as a retry, the session and what the agent does. */
+/**
+ * Records every call: what it asks and answers, its usage (an interrupted one's too), a schema miss
+ * as a retry, the session and what the agent does.
+ */
 function metered(runtime: AgentRuntime, node: string, ctx: Context, onSession: (id: string) => void): AgentRuntime {
   let calls = 0;
   const sessions = new Set<string>();
@@ -139,6 +142,16 @@ function metered(runtime: AgentRuntime, node: string, ctx: Context, onSession: (
     close: () => runtime.close(),
     async run<T>(request: AgentRequest<T>) {
       calls++;
+      const { prompt, model, access, sessionId } = request;
+      ctx.emit({
+        type: "prompt",
+        node,
+        text: prompt,
+        runtime: runtime.name,
+        ...(model !== undefined && { model }),
+        ...(access !== undefined && { access }),
+        ...(sessionId !== undefined && { sessionId }),
+      });
       try {
         const result = await runtime.run({
           ...request,
@@ -152,6 +165,8 @@ function metered(runtime: AgentRuntime, node: string, ctx: Context, onSession: (
             ctx.emit({ type: "activity", node, ...(tool !== undefined && { tool }), text: brief(text, SHOWN) }),
         });
         usage(result);
+        const answer = result.structured === undefined ? result.text : JSON.stringify(result.structured);
+        ctx.emit({ type: "answer", node, text: answer });
         return result;
       } catch (error) {
         if (error instanceof InterruptedError) usage(error.usage);

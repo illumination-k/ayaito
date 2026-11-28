@@ -4,6 +4,7 @@ export { exec, type ExecResult } from "./exec.ts";
 export { assign, branch, Flow, forEach, parallel, until } from "./flow.ts";
 export { budget, BudgetError, timeout, TimeoutError, type Budget, type Spent } from "./limits.ts";
 export { graphSchema, toGraph, type Graph, type GraphEdge, type GraphNode } from "./graph.ts";
+export { formatEvent } from "./log.ts";
 export { toMermaid } from "./mermaid.ts";
 export {
   fnNode,
@@ -36,4 +37,5 @@ export {
 } from "./runtime.ts";
 export { steering, type Sent, type Steer } from "./steer.ts";
 export { FsStore } from "./store.ts";
+export { formatRun } from "./watch.ts";
 export { worktree, type InWorktree, type WorktreeOptions } from "./worktree.ts";

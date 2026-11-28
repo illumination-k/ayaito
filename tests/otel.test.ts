@@ -122,14 +122,18 @@ describe("runTraced", () => {
     const flow = Flow.start<string>("f").then(count).build();
     await runTraced(flow, "ab", { runId: "r", store: await tmpStore(), tracer });
     expect(span("invoke_agent count").events.map((e) => [e.name, e.attributes])).toEqual([
+      ["prompt", { runtime: "fake" }],
       ["tool", { "gen_ai.tool.name": "Read" }],
+      ["answer", {}],
     ]);
 
     exporter.reset();
     await runTraced(flow, "ab", { runId: "r", store: await tmpStore(), tracer, content: true });
     expect(span("invoke_agent count").events.map((e) => [e.name, e.attributes])).toEqual([
+      ["prompt", { runtime: "fake", text: "ab" }],
       ["tool", { "gen_ai.tool.name": "Read", input: "notes.md" }],
       ["message", { text: "thinking" }],
+      ["answer", { text: '{"n":2}' }],
     ]);
   });
 
